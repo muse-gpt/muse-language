@@ -1,0 +1,4 @@
+interface:
+  display_name: "Muse Composer"
+  short_description: "Shape music, scores, and arrangements in Muse"
+  default_prompt: "Use $muse-composer to develop my musical idea into Muse sections, music blocks, and exports."

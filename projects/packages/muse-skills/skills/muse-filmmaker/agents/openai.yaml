@@ -1,0 +1,4 @@
+interface:
+  display_name: "Muse Filmmaker"
+  short_description: "Translate scenes and shot language into Muse"
+  default_prompt: "Use $muse-filmmaker to develop my scene, emotional arc, and audiovisual plan."

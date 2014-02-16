@@ -1,0 +1,4 @@
+interface:
+  display_name: "Muse Publish"
+  short_description: "Check and package Muse deliverables"
+  default_prompt: "Use $muse-publish to validate, preview, and package my Muse work for delivery."

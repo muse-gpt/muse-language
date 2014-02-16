@@ -1,0 +1,84 @@
+<template>
+  <div class="muse-page">
+    <header class="muse-site-header">
+      <Link class="muse-site-header__brand" href="/"><strong>Muse</strong></Link>
+      <nav class="muse-site-header__nav" aria-label="Primary">
+        <Link href="/">Home</Link>
+        <Link href="/language">Language</Link>
+        <Link href="/start">Get started</Link>
+      </nav>
+    </header>
+    <main>
+      <Badge tone="brand">Getting started</Badge>
+      <h1>Make your first direction legible.</h1>
+      <p class="muse-page__lede">A small path from an empty folder to a validated render plan.</p>
+      <ol class="muse-page__steps">
+        <li>
+          <strong>Initialize a project</strong>
+          <CodeBlock :code="stepInit" caption="shell" />
+        </li>
+        <li>
+          <strong>Describe intent, then orchestrate</strong>
+          <p>Write the feeling and references before locking implementation details.</p>
+        </li>
+        <li>
+          <strong>Check and preview</strong>
+          <CodeBlock :code="stepCheck" caption="shell" />
+        </li>
+      </ol>
+    </main>
+  </div>
+</template>
+
+<style>
+  .muse-site-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1rem 0;
+    margin-bottom: 1.5rem;
+    border-bottom: 1px solid var(--vmz-line-default, #e2e8f0);
+  }
+  .muse-site-header__brand {
+    font-size: 1.15rem;
+    text-decoration: none;
+    color: var(--vmz-text-ink, #0f172a);
+  }
+  .muse-site-header__nav {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+  .muse-page {
+    max-width: 56rem;
+    margin: 0 auto;
+    padding: 0 1.25rem 3rem;
+  }
+  .muse-page h1 {
+    margin: 0.75rem 0;
+    font-size: clamp(1.6rem, 3.5vw, 2.2rem);
+  }
+  .muse-page__lede {
+    color: var(--vmz-text-steel, #475569);
+    max-width: 40rem;
+    line-height: 1.55;
+  }
+  .muse-page__steps {
+    margin: 1.5rem 0;
+    padding-left: 1.25rem;
+    display: grid;
+    gap: 1.25rem;
+  }
+  .muse-page__steps li {
+    display: grid;
+    gap: 0.5rem;
+  }
+</style>
+
+<script client>
+export default class StartPage {
+    stepInit = "muse init demo\ncd demo";
+    stepCheck = "muse check main.muse\nmuse preview main.muse";
+}
+</script>

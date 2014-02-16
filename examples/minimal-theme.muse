@@ -1,0 +1,14 @@
+﻿namespace minimal_theme;
+
+# 鏈€灏忕ず渚嬶細涓€涓钀藉嵆鍙敓鎴?MIDI銆丮usicXML銆丳DF銆乄AV 鍜?MP3銆?timeline {
+  act theme : 0..8
+}
+
+tempo { at 0 bpm 120 }
+
+music for theme {
+  key "C major"
+  meter 4/4
+  motif "C4 E4 G4 C5"
+  template "game_battle"
+}

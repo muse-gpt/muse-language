@@ -1,0 +1,53 @@
+{
+    "name": "muse-language",
+    "displayName": "Muse Language",
+    "description": "Syntax highlighting for Muse (.muse) audiovisual composition scripts",
+    "version": "0.0.1",
+    "publisher": "muse",
+    "license": "MPL-2.0",
+    "engines": {
+        "vscode": "^1.85.0"
+    },
+    "categories": [
+        "Programming Languages"
+    ],
+    "activationEvents": [
+        "onLanguage:muse"
+    ],
+    "main": "./src/extension.js",
+    "contributes": {
+        "languages": [
+            {
+                "id": "muse",
+                "aliases": ["Muse", "muse"],
+                "extensions": [".muse"],
+                "configuration": "./language-configuration.json"
+            }
+        ],
+        "grammars": [
+            {
+                "language": "muse",
+                "scopeName": "source.muse",
+                "path": "./syntaxes/muse.tmLanguage.json"
+            }
+        ],
+        "themes": [
+            {
+                "label": "Muse",
+                "uiTheme": "vs-dark",
+                "path": "./themes/muse-color-theme.json"
+            }
+        ],
+        "commands": [
+            {
+                "command": "muse.openGuide",
+                "title": "Muse: Open Language Guide"
+            }
+        ]
+    },
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/muse-gpt/muse-language.git",
+        "directory": "projects/packages/muse-for-vscode"
+    }
+}

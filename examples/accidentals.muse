@@ -1,0 +1,15 @@
+﻿namespace accidentals;
+
+# C major 涓殑 C# 闇€瑕佷复鏃跺崌鍙凤紱绗簩灏忚妭搴旈噸鏂版樉绀鸿璁板彿銆?timeline {
+  act study : 0..8
+}
+
+tempo { at 0 bpm 96 }
+
+music for study {
+  key "C major"
+  meter 4/4
+  motif "C#4 C#4 D4 E4"
+  template "game_battle"
+  density 0.35
+}

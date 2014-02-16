@@ -1,0 +1,75 @@
+namespace game_battle_arc;
+
+# 激烈：持续的十六分音符和低音 E 建立战斗压力。
+timeline {
+  act assault : 0..16
+  act fracture : 16..20
+  act lament : 20..36
+  act awakening : 36..44
+  act final_charge : 44..60
+}
+
+# 速度在断裂处坠落，在最终冲锋处回到最快。
+tempo {
+  at 0 bpm 156
+  at 16 bpm 96
+  at 20 bpm 76
+  at 36 bpm 112
+  at 44 bpm 168
+}
+
+intent {
+  emotion "violent urgency" for assault
+  emotion "shock and emptiness" for fracture
+  emotion "grief without surrender" for lament
+  emotion "hope becoming resolve" for awakening
+  emotion "defiant triumph" for final_charge
+}
+
+orchestrate for entire_song {
+  map "dramatic_arc" to { energy: 0.92, density: 0.85, harmonic_tension: 0.75 }
+  hard_constraints: [
+    "the scar motif must remain recognizable",
+    "no complete cadence before final_charge",
+    "lament must contain silence"
+  ]
+  soft_preferences: ["low strings before high strings", "use a final major third"]
+  transition_strategy: { on_energy_peak: "cut_to_breath_then_rebuild" }
+}
+
+music for assault {
+  key "E minor"
+  meter 4/4
+  motif "E4 G4 F#4 E4"
+  template "game_battle"
+  density 0.90
+}
+
+music for fracture {
+  key "E minor"
+  motif "E4 G4 F#4 E4"
+  template "game_battle"
+  density 0.10
+}
+
+music for lament {
+  key "C major"
+  meter 4/4
+  motif "E4 G4 F#4 E4"
+  template "game_battle"
+  density 0.25
+}
+
+music for awakening {
+  key "E minor"
+  motif "E4 G4 F#4 E4"
+  template "game_battle"
+  density 0.65
+}
+
+music for final_charge {
+  key "E major"
+  motif "E4 G4 F#4 E4"
+  template "game_battle"
+  density 1.00
+}

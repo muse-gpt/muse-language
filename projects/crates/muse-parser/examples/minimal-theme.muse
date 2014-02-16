@@ -1,0 +1,15 @@
+namespace minimal_theme;
+
+# 最小示例：一个段落即可生成 MIDI、MusicXML、PDF、WAV 和 MP3。
+timeline {
+  act theme : 0..8
+}
+
+tempo { at 0 bpm 120 }
+
+music for theme {
+  key "C major"
+  meter 4/4
+  motif "C4 E4 G4 C5"
+  template "game_battle"
+}

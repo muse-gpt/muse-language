@@ -1,0 +1,4 @@
+interface:
+  display_name: "Muse Visual Artist"
+  short_description: "Develop visual systems and motion rules"
+  default_prompt: "Use $muse-visual-artist to turn this visual concept into reusable Muse visual rules."

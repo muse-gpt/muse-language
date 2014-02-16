@@ -1,0 +1,4 @@
+interface:
+  display_name: "Muse Podcast"
+  short_description: "Shape chapters, voice, and music beds"
+  default_prompt: "Use $muse-podcast to structure my podcast or audio story in Muse."

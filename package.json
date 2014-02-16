@@ -1,0 +1,21 @@
+{
+    "private": true,
+    "packageManager": "pnpm@9.15.0",
+    "scripts": {
+        "build": "cargo build --release",
+        "test": "cargo test --release",
+        "typecheck": "pnpm --filter @muse/muse typecheck",
+        "dev": "pnpm --filter @muse/homepage dev",
+        "build:homepage": "pnpm --filter @muse/homepage build",
+        "homepage:check": "pnpm --filter @muse/homepage check",
+        "fmt": "biome format --write .",
+        "placeholder": "nifty publish --placeholder --dry-run",
+        "placeholder:publish": "nifty publish --placeholder",
+        "placeholder:trust": "nifty trust"
+    },
+    "devDependencies": {
+        "@doki-land/nifty": "^0.0.12",
+        "@biomejs/biome": "2.5.7",
+        "@muse/muse": "workspace:*"
+    }
+}

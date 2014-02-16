@@ -1,0 +1,10 @@
+[package]
+name = "muse-ir"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+[dependencies]
+muse-parser = { path = "../muse-parser" }
+muse-types = { path = "../muse-types" }
+serde.workspace = true
+schemars.workspace = true

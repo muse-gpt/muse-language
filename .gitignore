@@ -1,0 +1,38 @@
+# OS
+.DS_Store/
+thumbs.db
+time-travel.*
+
+# IDE
+.vscode/
+.vs/
+.idea/
+*.iml
+
+# Rust
+target/
+tmp/
+.cargo/config.toml
+
+# Node
+node_modules/
+dist/
+*.txt
+*.log
+
+# Nifty / npm placeholder (local secrets — never commit)
+.placeholder-npm-cache.json
+scripts/.placeholder-npm-cache.json
+.cache/npm-placeholder.json
+.env.placeholder.local
+
+# Generated package artifacts
+projects/packages/muse-unknown-wasm32/lib/
+projects/packages/homepage/dist/
+projects/packages/homepage/.vmz/
+*.wasm
+*.node
+
+# Staged native CLI binaries (CI / local stage)
+projects/packages/muse-*/lib/muse
+projects/packages/muse-*/lib/muse.exe

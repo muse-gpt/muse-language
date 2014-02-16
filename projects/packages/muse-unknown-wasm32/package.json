@@ -1,0 +1,10 @@
+﻿{
+    "name": "@muse/muse-unknown-wasm32",
+    "version": "0.0.1",
+    "description": "Muse wasm artifact placeholder (wasm32-unknown-unknown)",
+    "type": "module",
+    "license": "MPL-2.0",
+    "main": "./lib/muse_wasm.js",
+    "files": ["lib", "readme.md"],
+    "publishConfig": { "access": "public" }
+}

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Muse Science Video"
+  short_description: "Build accurate, visual science explanations"
+  default_prompt: "Use $muse-science-video to turn this topic into a fact-checked Muse explainer."

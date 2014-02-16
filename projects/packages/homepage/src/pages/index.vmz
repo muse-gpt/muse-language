@@ -1,0 +1,124 @@
+<template>
+  <div class="muse-home">
+    <header class="muse-site-header">
+      <Link class="muse-site-header__brand" href="/"><strong>Muse</strong></Link>
+      <nav class="muse-site-header__nav" aria-label="Primary">
+        <Link href="/">Home</Link>
+        <Link href="/language">Language</Link>
+        <Link href="/start">Get started</Link>
+      </nav>
+    </header>
+    <main>
+      <section class="muse-home__hero" aria-labelledby="muse-hero-title">
+        <Badge tone="brand">Audiovisual composition · Rust core</Badge>
+        <h1 id="muse-hero-title">Compose what you mean.</h1>
+        <p class="muse-home__lede">
+          Muse turns creative direction into a deterministic plan for sound, image, and time.
+          Keep the human part human. Let the system carry the rest.
+        </p>
+        <div class="muse-home__actions">
+          <Link href="/start"><Button type="button" variant="primary">Start composing</Button></Link>
+          <Link href="/language"><Button type="button" variant="secondary">See the language</Button></Link>
+        </div>
+      </section>
+
+      <section class="muse-home__grid" aria-label="Layers">
+        <Card title="intent" description="Record the why: emotion, references, and atmosphere worth protecting." />
+        <Card title="orchestrate" description="Map sound, image, color, and motion under hard constraints and soft preferences." />
+        <Card title="timeline / music / visual" description="Executable blocks that render engines consume without rewriting Muse semantics." />
+      </section>
+
+      <section class="muse-home__install" aria-label="Install">
+        <Card title="Install" description="npm entry exposes the muse CLI via @vmz/commander; native work runs in Rust.">
+          <CodeBlock
+            :code="installSample"
+            caption="shell"
+            copy-label="Copy"
+            @copy="() => this.copyInstall()"
+          />
+        </Card>
+      </section>
+    </main>
+  </div>
+</template>
+
+<style>
+  .muse-site-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1rem 0;
+    margin-bottom: 1.5rem;
+    border-bottom: 1px solid var(--vmz-line-default, #e2e8f0);
+  }
+  .muse-site-header__brand {
+    font-size: 1.15rem;
+    letter-spacing: 0.04em;
+    text-decoration: none;
+    color: var(--vmz-text-ink, #0f172a);
+  }
+  .muse-site-header__nav {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+  .muse-home {
+    max-width: 56rem;
+    margin: 0 auto;
+    padding: 0 1.25rem 3rem;
+  }
+  .muse-home__hero {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.85rem;
+    padding: 1.5rem 0 2rem;
+  }
+  .muse-home__hero h1 {
+    margin: 0;
+    font-size: clamp(1.75rem, 4vw, 2.5rem);
+    line-height: 1.15;
+  }
+  .muse-home__lede {
+    margin: 0;
+    max-width: 40rem;
+    color: var(--vmz-text-steel, #475569);
+    line-height: 1.55;
+  }
+  .muse-home__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.65rem;
+  }
+  .muse-home__grid {
+    display: grid;
+    gap: 1.25rem;
+    margin-bottom: 1.5rem;
+  }
+  .muse-home__install {
+    margin-top: 0.5rem;
+  }
+  @media (min-width: 720px) {
+    .muse-home__grid {
+      grid-template-columns: repeat(3, 1fr);
+      align-items: stretch;
+    }
+  }
+</style>
+
+<script client>
+export default class IndexPage {
+    installSample = "npm install -g @muse/muse\nmuse init demo && cd demo && muse check main.muse";
+
+    async copyInstall() {
+        const text = String(this.installSample || "");
+        if (!text || typeof navigator === "undefined" || !navigator.clipboard?.writeText) return;
+        try {
+            await navigator.clipboard.writeText(text);
+        } catch {
+            /* ignore */
+        }
+    }
+}
+</script>

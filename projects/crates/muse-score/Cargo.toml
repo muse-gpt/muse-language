@@ -1,0 +1,10 @@
+[package]
+name = "muse-score"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+muse-music = { path = "../muse-music" }
+ttf-parser.workspace = true

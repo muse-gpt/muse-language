@@ -1,0 +1,2 @@
+# Copy to `config.toml` (gitignored) when local path overlays are needed.
+# Muse workspace currently has no git-dep patches; keep this file as the panduck-shaped hook.

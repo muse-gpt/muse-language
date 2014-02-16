@@ -1,0 +1,44 @@
+#!/usr/bin/env node
+
+/**
+ * Install Muse agent skills into local coding-agent skill directories.
+ *
+ * Usage:
+ *   npx @muse/muse-skills
+ *   npx @muse/muse-skills -g
+ *   npx @muse/muse-skills -y
+ */
+
+import { spawn } from "node:child_process";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const userArgs = process.argv.slice(2);
+
+if (userArgs.includes("--help") || userArgs.includes("-h")) {
+    console.log(`@muse/muse-skills — install Muse user agent skills
+
+Usage:
+  npx @muse/muse-skills
+  npx @muse/muse-skills -g
+  npx @muse/muse-skills -y
+  npx @muse/muse-skills -a <agent> -y
+
+Runs \`npx skills add <package-root>\` and forwards extra flags.
+`);
+    process.exit(0);
+}
+
+function quoteForShell(value) {
+    if (process.platform !== "win32") return value;
+    if (!/[\s"&<>|^()]/.test(value)) return value;
+    return `"${String(value).replace(/"/g, '\\"')}"`;
+}
+
+const args = ["skills", "add", packageRoot, ...userArgs];
+const child = spawn("npx", args.map(quoteForShell), {
+    stdio: "inherit",
+    shell: process.platform === "win32",
+});
+child.on("exit", (code) => process.exit(code ?? 1));

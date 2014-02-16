@@ -1,0 +1,70 @@
+<template>
+  <div class="muse-page">
+    <header class="muse-site-header">
+      <Link class="muse-site-header__brand" href="/"><strong>Muse</strong></Link>
+      <nav class="muse-site-header__nav" aria-label="Primary">
+        <Link href="/">Home</Link>
+        <Link href="/language">Language</Link>
+        <Link href="/start">Get started</Link>
+      </nav>
+    </header>
+    <main>
+      <Badge tone="brand">The language</Badge>
+      <h1>A readable score for complex work.</h1>
+      <p class="muse-page__lede">
+        Muse keeps creative intent, orchestration rules, and executable time in one source of truth.
+      </p>
+      <section class="muse-page__stack">
+        <Card title="intent" description="Records the why before choosing implementation details." />
+        <Card title="orchestrate" description="Translates the why into cross-dimensional mappings and transition strategy." />
+        <Card title="execute" description="timeline, music, and visual blocks feed a deterministic render plan." />
+      </section>
+      <p><Link href="/start"><Button type="button" variant="primary">Start with the guide</Button></Link></p>
+    </main>
+  </div>
+</template>
+
+<style>
+  .muse-site-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1rem 0;
+    margin-bottom: 1.5rem;
+    border-bottom: 1px solid var(--vmz-line-default, #e2e8f0);
+  }
+  .muse-site-header__brand {
+    font-size: 1.15rem;
+    text-decoration: none;
+    color: var(--vmz-text-ink, #0f172a);
+  }
+  .muse-site-header__nav {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+  .muse-page {
+    max-width: 56rem;
+    margin: 0 auto;
+    padding: 0 1.25rem 3rem;
+  }
+  .muse-page h1 {
+    margin: 0.75rem 0;
+    font-size: clamp(1.6rem, 3.5vw, 2.2rem);
+  }
+  .muse-page__lede {
+    color: var(--vmz-text-steel, #475569);
+    max-width: 40rem;
+    line-height: 1.55;
+  }
+  .muse-page__stack {
+    display: grid;
+    gap: 1rem;
+    margin: 1.5rem 0 2rem;
+  }
+</style>
+
+<script client>
+export default class LanguagePage {}
+</script>

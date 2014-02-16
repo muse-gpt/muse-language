@@ -1,0 +1,35 @@
+{
+    "name": "@muse/muse-skills",
+    "version": "0.0.1",
+    "type": "module",
+    "description": "Agent skills for Muse creators. Install with npx @muse/muse-skills.",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/muse-gpt/muse-language.git",
+        "directory": "projects/packages/muse-skills"
+    },
+    "homepage": "https://github.com/muse-gpt/muse-language/tree/dev/projects/packages/muse-skills",
+    "keywords": [
+        "muse",
+        "audiovisual",
+        "composition",
+        "agent-skills",
+        "skills",
+        "agents"
+    ],
+    "license": "MPL-2.0",
+    "bin": {
+        "muse-skills": "bin/muse-skills"
+    },
+    "files": [
+        "bin",
+        "skills",
+        "readme.md"
+    ],
+    "engines": {
+        "node": ">=20"
+    },
+    "publishConfig": {
+        "access": "public"
+    }
+}
