@@ -1,0 +1,15 @@
+[package]
+name = "muse-mcp"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+[dependencies]
+anyhow.workspace = true
+rmcp.workspace = true
+schemars.workspace = true
+tokio.workspace = true
+muse-ir = { path = "../muse-ir" }
+muse-project = { path = "../muse-project" }
+muse-types = { path = "../muse-types" }
+serde.workspace = true
+serde_json.workspace = true

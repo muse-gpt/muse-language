@@ -1,0 +1,20 @@
+[package]
+name = "muse-tools"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+[[bin]]
+name = "muse"
+path = "src/main.rs"
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+tokio.workspace = true
+muse-ir = { path = "../muse-ir" }
+muse-mcp = { path = "../muse-mcp" }
+muse-media = { path = "../muse-media" }
+muse-music = { path = "../muse-music" }
+muse-score = { path = "../muse-score" }
+muse-project = { path = "../muse-project" }
+muse-types = { path = "../muse-types" }
+serde_json.workspace = true
