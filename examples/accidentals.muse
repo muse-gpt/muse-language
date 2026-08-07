@@ -1,0 +1,16 @@
+namespace accidentals;
+
+# C major 中的 C# 需要临时升号；第二小节应重新显示该记号。
+timeline {
+  act study : 0..8
+}
+
+tempo { at 0 bpm 96 }
+
+music for study {
+  key "C major"
+  meter 4/4
+  motif "C#4 C#4 D4 E4"
+  template "game_battle"
+  density 0.35
+}

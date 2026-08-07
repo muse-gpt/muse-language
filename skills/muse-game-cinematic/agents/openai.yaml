@@ -1,0 +1,4 @@
+interface:
+  display_name: "Muse Game Cinematic"
+  short_description: "Coordinate game states, music, and cinematics"
+  default_prompt: "Use $muse-game-cinematic to design a reusable game event or cinematic in Muse."

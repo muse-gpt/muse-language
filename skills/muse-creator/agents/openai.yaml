@@ -1,0 +1,4 @@
+interface:
+  display_name: "Muse Creator"
+  short_description: "Turn an idea into the right Muse workflow"
+  default_prompt: "Use $muse-creator to turn my idea into a Muse project and choose the right creator workflow."

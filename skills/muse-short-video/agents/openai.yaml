@@ -1,0 +1,4 @@
+interface:
+  display_name: "Muse Short Video"
+  short_description: "Design short-form hooks and pacing"
+  default_prompt: "Use $muse-short-video to structure my idea as a platform-ready short video."

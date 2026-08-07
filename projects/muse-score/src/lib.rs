@@ -11,6 +11,7 @@ pub use scene::{
 };
 mod spacing;
 pub use spacing::justify_columns;
+mod music_font;
 
 pub fn render_svg(score: &Score) -> String {
     let scene = layout(score);
@@ -28,6 +29,12 @@ pub fn render_svg(score: &Score) -> String {
                 r##"<ellipse cx="{cx:.1}" cy="{cy:.1}" rx="{rx:.1}" ry="{ry:.1}" fill="{}" stroke="#111"/>"##,
                 if filled { "#111" } else { "white" }
             )),
+            Primitive::Text { x, y, size, value }
+                if value.chars().count() == 1
+                    && music_font::svg_glyph(value.chars().next().unwrap(), x, y, size).is_some() =>
+            {
+                out.push_str(&music_font::svg_glyph(value.chars().next().unwrap(), x, y, size).unwrap())
+            }
             Primitive::Text { x, y, size, value } => out.push_str(&format!(
                 r#"<text x="{x:.1}" y="{y:.1}" font-size="{size:.1}">{}</text>"#,
                 esc(&value)
@@ -64,6 +71,12 @@ fn render_page_svg(page: Page) -> String {
                 r##"<ellipse cx="{cx:.1}" cy="{cy:.1}" rx="{rx:.1}" ry="{ry:.1}" fill="{}" stroke="#111"/>"##,
                 if filled { "#111" } else { "white" }
             )),
+            Primitive::Text { x, y, size, value }
+                if value.chars().count() == 1
+                    && music_font::svg_glyph(value.chars().next().unwrap(), x, y, size).is_some() =>
+            {
+                out.push_str(&music_font::svg_glyph(value.chars().next().unwrap(), x, y, size).unwrap())
+            }
             Primitive::Text { x, y, size, value } => out.push_str(&format!(
                 r#"<text x="{x:.1}" y="{y:.1}" font-size="{size:.1}">{}</text>"#,
                 esc(&value)
@@ -146,13 +159,30 @@ fn pdf_content(page: &Page) -> String {
                 let k = 0.552_284_8;
                 out.push_str(&format!("{:.2} {:.2} m {:.2} {:.2} {:.2} {:.2} {:.2} {:.2} c {:.2} {:.2} {:.2} {:.2} {:.2} {:.2} c {:.2} {:.2} {:.2} {:.2} {:.2} {:.2} c {:.2} {:.2} {:.2} {:.2} {:.2} {:.2} c {}\n", cx + rx, y, cx + rx, y + ry*k, cx + rx*k, y + ry, cx, y + ry, cx - rx*k, y + ry, cx-rx, y+ry*k, cx-rx, y, cx-rx, y-ry*k, cx-rx*k, y-ry, cx, y-ry, cx+rx*k, y-ry, cx+rx, y-ry*k, cx+rx, y, if *filled { "f" } else { "S" }));
             }
+            Primitive::Text { x, y, size, value } if value.chars().count() == 1 => {
+                let glyph = value.chars().next().unwrap();
+                if let Some(path) = music_font::pdf_glyph(glyph, *x, page.height - *y, *size) {
+                    out.push_str(&path);
+                } else {
+                    out.push_str(&format!(
+                        "BT /F1 {size:.1} Tf {x:.1} {:.1} Td ({}) Tj ET\n",
+                        page.height - y,
+                        pdf_escape(&pdf_text(value))
+                    ));
+                }
+            }
             Primitive::Text { x, y, size, value } => out.push_str(&format!(
                 "BT /F1 {size:.1} Tf {x:.1} {:.1} Td ({}) Tj ET\n",
                 page.height - y,
                 pdf_escape(&pdf_text(value))
             )),
-            Primitive::Rest { x, y, .. } => {
-                out.push_str(&format!("BT /F1 14 Tf {x:.1} {:.1} Td (r) Tj ET\n", page.height - y))
+            Primitive::Rest { x, y, duration } => {
+                if let Some(path) = music_font::pdf_glyph(music_font::rest_glyph(*duration), *x, page.height - *y, 15.0)
+                {
+                    out.push_str(&path);
+                } else {
+                    pdf_rest(&mut out, *x, page.height - *y, *duration)
+                }
             }
             Primitive::Flag { x, y, up, levels } => {
                 let sign = if *up { 1.0 } else { -1.0 };
@@ -177,16 +207,7 @@ fn esc(v: &str) -> String {
         .replace('"', "&quot;")
 }
 fn svg_rest(x: f32, y: f32, duration: DurationValue) -> String {
-    let symbol = match duration {
-        DurationValue::Whole => "𝄻",
-        DurationValue::Half => "𝄼",
-        DurationValue::Quarter => "𝄽",
-        DurationValue::Eighth => "𝄾",
-        DurationValue::Sixteenth => "𝄿",
-        DurationValue::ThirtySecond => "𝅀",
-        DurationValue::Other(_) => "𝄽",
-    };
-    format!(r#"<text x="{x:.1}" y="{y:.1}" font-size="15" font-family="Bravura, Noto Music, serif">{symbol}</text>"#)
+    music_font::svg_glyph(music_font::rest_glyph(duration), x, y, 15.0).unwrap_or_default()
 }
 fn svg_flag(x: f32, y: f32, up: bool, levels: u8) -> String {
     let sign = if up { 1.0 } else { -1.0 };
@@ -214,9 +235,58 @@ fn pdf_text(value: &str) -> String {
     value.replace("𝄞", "G")
 }
 
+/// Native PDF rest drawing. These deliberately do not depend on a host music font:
+/// Type 1 base fonts have no SMuFL coverage, which used to turn every rest into `r`.
+fn pdf_rest(out: &mut String, x: f32, y: f32, duration: DurationValue) {
+    match duration {
+        DurationValue::Whole => out.push_str(&format!("{:.1} {:.1} 10 3 re f\n", x - 5.0, y + 3.0)),
+        DurationValue::Half => out.push_str(&format!("{:.1} {:.1} 10 3 re f\n", x - 5.0, y - 5.0)),
+        DurationValue::Quarter | DurationValue::Other(_) => out.push_str(&format!(
+            "1.8 w {x:.1} {y:.1} m {:.1} {:.1} l {:.1} {:.1} l {:.1} {:.1} l S\n",
+            x + 4.0,
+            y + 7.0,
+            x - 3.0,
+            y + 1.0,
+            x + 3.0,
+            y - 6.0
+        )),
+        DurationValue::Eighth | DurationValue::Sixteenth | DurationValue::ThirtySecond => {
+            out.push_str(&format!("1.6 w {x:.1} {:.1} m {x:.1} {:.1} l S\n", y - 8.0, y + 8.0));
+            let count = match duration {
+                DurationValue::Eighth => 1,
+                DurationValue::Sixteenth => 2,
+                _ => 3,
+            };
+            for flag in 0..count {
+                let offset = flag as f32 * 4.0;
+                out.push_str(&format!(
+                    "1.6 w {x:.1} {:.1} m {:.1} {:.1} {:.1} {:.1} {:.1} {:.1} c S\n",
+                    y + 8.0 - offset,
+                    x + 7.0,
+                    y + 6.0 - offset,
+                    x + 7.0,
+                    y + 1.0 - offset,
+                    x + 2.0,
+                    y - 1.0 - offset,
+                ));
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn music_font_outlines_are_available_without_system_fonts() {
+        assert!(
+            music_font::svg_glyph(music_font::TREBLE_CLEF, 0.0, 0.0, 24.0).is_some_and(|path| path.contains("<path"))
+        );
+        assert!(
+            music_font::pdf_glyph(music_font::rest_glyph(DurationValue::Quarter), 0.0, 0.0, 16.0)
+                .is_some_and(|path| path.ends_with("f\n"))
+        );
+    }
     #[test]
     fn pdf_uses_one_page_per_document_scene_page() {
         let mut score = Score::default();

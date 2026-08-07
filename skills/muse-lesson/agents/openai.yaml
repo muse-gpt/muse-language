@@ -1,0 +1,4 @@
+interface:
+  display_name: "Muse Lesson"
+  short_description: "Turn learning goals into clear lessons"
+  default_prompt: "Use $muse-lesson to design a teachable Muse lesson with explanations and checks."

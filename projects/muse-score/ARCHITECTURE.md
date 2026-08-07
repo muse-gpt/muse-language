@@ -18,7 +18,9 @@ Muse should follow the common architecture visible across those projects:
    pages. The break result is independent of the drawing backend.
 6. **Backend scene**: emit a backend-neutral `Scene` containing paths, text,
    glyph references, and lines. PDF, SVG, and HTML renderers consume this
-   scene; none of them performs musical layout.
+   scene; none of them performs musical layout. SMuFL glyph references resolve
+   through the bundled OFL-licensed Bravura outlines using `ttf-parser`; they
+   are emitted as native paths rather than relying on installed fonts.
 
 The current renderer is deliberately considered a transitional backend. The
 next implementation should introduce these modules and tests before adding

@@ -63,6 +63,7 @@ pub struct Measure {
 pub struct VoiceMeasure {
     pub track: usize,
     pub name: String,
+    pub role: String,
     pub columns: Vec<NoteColumn>,
 }
 
@@ -95,6 +96,7 @@ pub fn normalize(score: &Score) -> SemanticScore {
             .map(|(track, info)| VoiceMeasure {
                 track,
                 name: info.name.clone(),
+                role: info.role.clone(),
                 columns: columns_for(score, track, start, start + measure_ticks, measure_ticks),
             })
             .collect();

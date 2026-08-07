@@ -66,6 +66,12 @@ pub fn media_info(path: &Path) -> Result<MediaInfo> {
     if kind == MediaKind::Unknown {
         bail!("unsupported asset format `{ext}`")
     }
+    if kind == MediaKind::Video {
+        bail!(
+            "video asset `{}` is not supported by the current pure-Rust compositor; use PNG/JPEG/WebP image layers and WAV/FLAC/MP3 audio, or retain the source as an external reference",
+            path.display()
+        )
+    }
     let mut info = MediaInfo {
         kind,
         format: ext,

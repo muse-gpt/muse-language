@@ -22,4 +22,19 @@ cd demo
 
 `preview` produces PNG frames, a WAV guide track, and a manifest. Asset metadata is YAML and suitable for Git. The initial native media path supports PNG/JPEG/WebP and WAV/FLAC/MP3. The command surface includes an AV1 MP4 render target, but final AV1 MP4 muxing remains gated until its pure-Rust encoder integration is enabled; it fails explicitly rather than claiming a successful MP4 export.
 
-Local skills live under `skills/<skill-name>/skill.yaml`. Run `muse mcp serve` to expose the four local MCP tools over stdio.
+## Creator Skills
+
+Repository skills are organized around the person and the work they are doing, not around compiler internals:
+
+- `muse-creator`: choose a workflow from an open-ended idea.
+- `muse-composer`: compose, arrange, notate, and export music.
+- `muse-science-video`: build fact-checked science and knowledge explainers.
+- `muse-short-video`: design vertical short-form videos and platform variants.
+- `muse-filmmaker`: develop scenes, shot language, narrative arcs, and sound design.
+- `muse-visual-artist`: create visual systems, motion, particles, and generative scenes.
+- `muse-lesson`: turn learning objectives into teachable audiovisual lessons.
+- `muse-podcast`: structure podcasts, interviews, and sound narratives.
+- `muse-game-cinematic`: coordinate game states, music, and cinematics.
+- `muse-publish`: validate, preview, and package deliverables for release.
+
+Each skill has a `SKILL.md`, an audience-specific trigger description, and only the references needed for that workflow. Project-local versioned manifests remain under `skills/<skill-name>/skill.yaml`; run `muse mcp serve` to expose the four project tools over stdio.
