@@ -41,6 +41,7 @@ pub fn render_svg(score: &Score) -> String {
             )),
             Primitive::Rest { x, y, duration } => out.push_str(&svg_rest(x, y, duration)),
             Primitive::Flag { x, y, up, levels } => out.push_str(&svg_flag(x, y, up, levels)),
+            Primitive::Tie { x1, y1, x2, y2, up } => out.push_str(&svg_tie(x1, y1, x2, y2, up)),
         }
     }
     out.push_str("</svg>");
@@ -83,6 +84,7 @@ fn render_page_svg(page: Page) -> String {
             )),
             Primitive::Rest { x, y, duration } => out.push_str(&svg_rest(x, y, duration)),
             Primitive::Flag { x, y, up, levels } => out.push_str(&svg_flag(x, y, up, levels)),
+            Primitive::Tie { x1, y1, x2, y2, up } => out.push_str(&svg_tie(x1, y1, x2, y2, up)),
         }
     }
     out.push_str("</svg>");
@@ -196,6 +198,19 @@ fn pdf_content(page: &Page) -> String {
                     ));
                 }
             }
+            Primitive::Tie { x1, y1, x2, y2, up } => {
+                let direction = if *up { 1.0 } else { -1.0 };
+                let control = (x2 - x1).abs().min(24.0) * 0.35;
+                out.push_str(&format!(
+                    "1.1 w {x1:.1} {:.1} m {:.1} {:.1} {:.1} {:.1} {x2:.1} {:.1} c S\n",
+                    page.height - y1,
+                    x1 + control,
+                    page.height - y1 + direction * 5.0,
+                    x2 - control,
+                    page.height - y2 + direction * 5.0,
+                    page.height - y2
+                ));
+            }
         }
     }
     out
@@ -221,6 +236,17 @@ fn svg_flag(x: f32, y: f32, up: bool, levels: u8) -> String {
             )
         })
         .collect()
+}
+fn svg_tie(x1: f32, y1: f32, x2: f32, y2: f32, up: bool) -> String {
+    let direction = if up { 1.0 } else { -1.0 };
+    let control = (x2 - x1).abs().min(24.0) * 0.35;
+    format!(
+        r##"<path d="M {x1:.1} {y1:.1} C {:.1} {:.1} {:.1} {:.1} {x2:.1} {y2:.1}" fill="none" stroke="#111" stroke-width="1.1"/>"##,
+        x1 + control,
+        y1 + direction * 5.0,
+        x2 - control,
+        y2 + direction * 5.0
+    )
 }
 fn pdf_escape(value: &str) -> String {
     value

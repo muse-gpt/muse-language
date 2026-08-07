@@ -34,6 +34,13 @@ pub enum Primitive {
         up: bool,
         levels: u8,
     },
+    Tie {
+        x1: f32,
+        y1: f32,
+        x2: f32,
+        y2: f32,
+        up: bool,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -431,6 +438,25 @@ pub fn layout_semantic(score: &SemanticScore) -> Scene {
                             ry: 3.8,
                             filled: !matches!(col.duration, crate::DurationValue::Whole | crate::DurationValue::Half),
                         });
+                        let tie_y = y + if stem_up { 7.0 } else { -7.0 };
+                        if note.tie_to_next {
+                            p.push(Primitive::Tie {
+                                x1: x + 5.0,
+                                y1: tie_y,
+                                x2: left + BAR_WIDTH - 4.0,
+                                y2: tie_y,
+                                up: stem_up,
+                            });
+                        }
+                        if note.tie_from_previous {
+                            p.push(Primitive::Tie {
+                                x1: left + 4.0,
+                                y1: tie_y,
+                                x2: x - 5.0,
+                                y2: tie_y,
+                                up: stem_up,
+                            });
+                        }
                         if stem_up {
                             edge = edge.min(y);
                         } else {
@@ -732,5 +758,31 @@ mod tests {
         assert!(layout(&score).primitives.iter().any(|primitive| matches!(
             primitive, Primitive::Text { value, .. } if value == &crate::music_font::BASS_CLEF.to_string()
         )));
+    }
+
+    #[test]
+    fn sustained_note_emits_tie_primitives() {
+        let mut score = muse_music::Score::default();
+        score.tracks.push(muse_music::Track {
+            name: "Piano".into(),
+            channel: 0,
+            program: 0,
+            role: "motif".into(),
+        });
+        score.notes.push(muse_music::Note {
+            track: 0,
+            channel: 0,
+            key: 60,
+            velocity: 90,
+            start_tick: 1_440,
+            duration_ticks: 960,
+            articulation: String::new(),
+        });
+        assert!(
+            layout(&score)
+                .primitives
+                .iter()
+                .any(|primitive| matches!(primitive, Primitive::Tie { .. }))
+        );
     }
 }

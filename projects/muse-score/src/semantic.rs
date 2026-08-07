@@ -49,6 +49,8 @@ pub struct NoteRef {
     pub key: u8,
     pub velocity: u8,
     pub articulation: String,
+    pub tie_from_previous: bool,
+    pub tie_to_next: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -121,9 +123,9 @@ fn columns_for(score: &Score, track: usize, start: u64, end: u64, measure_ticks:
     for note in score
         .notes
         .iter()
-        .filter(|n| n.track == track && n.start_tick >= start && n.start_tick < end)
+        .filter(|n| n.track == track && n.start_tick < end && n.start_tick + n.duration_ticks > start)
     {
-        by_tick.entry(note.start_tick).or_default().push(note);
+        by_tick.entry(note.start_tick.max(start)).or_default().push(note);
     }
     let mut columns = Vec::new();
     let mut cursor = start;
@@ -133,7 +135,7 @@ fn columns_for(score: &Score, track: usize, start: u64, end: u64, measure_ticks:
         }
         let duration = notes
             .iter()
-            .map(|n| n.duration_ticks)
+            .map(|n| (n.start_tick + n.duration_ticks).saturating_sub(tick))
             .min()
             .unwrap_or(1)
             .min(end - tick);
@@ -143,6 +145,8 @@ fn columns_for(score: &Score, track: usize, start: u64, end: u64, measure_ticks:
                 key: n.key,
                 velocity: n.velocity,
                 articulation: n.articulation.clone(),
+                tie_from_previous: n.start_tick < start,
+                tie_to_next: n.start_tick + n.duration_ticks > end,
             })
             .collect();
         columns.push(column(tick, duration, refs, score.ticks_per_quarter, false));
@@ -207,5 +211,39 @@ mod tests {
         assert_eq!(normalized.measures[0].voices[0].columns.len(), 3);
         assert!(normalized.measures[0].voices[0].columns[0].rest);
         assert_eq!(normalized.measures[0].voices[0].columns[1].notes.len(), 2);
+    }
+
+    #[test]
+    fn splits_sustained_notes_across_measure_boundaries() {
+        let mut score = Score::default();
+        score.tracks.push(Track {
+            name: "Piano".into(),
+            channel: 0,
+            program: 0,
+            role: "motif".into(),
+        });
+        score.notes.push(Note {
+            track: 0,
+            channel: 0,
+            key: 60,
+            velocity: 90,
+            start_tick: 1_440,
+            duration_ticks: 960,
+            articulation: String::new(),
+        });
+        let normalized = normalize(&score);
+        assert_eq!(normalized.measures.len(), 2);
+        let first = normalized.measures[0].voices[0]
+            .columns
+            .iter()
+            .find(|column| !column.rest)
+            .unwrap();
+        let second = normalized.measures[1].voices[0]
+            .columns
+            .iter()
+            .find(|column| !column.rest)
+            .unwrap();
+        assert!(first.notes[0].tie_to_next);
+        assert!(second.notes[0].tie_from_previous);
     }
 }
