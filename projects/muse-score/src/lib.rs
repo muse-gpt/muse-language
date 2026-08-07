@@ -1,5 +1,5 @@
 //! Pure-Rust deterministic score engraving. Layout is shared by SVG, HTML and PDF.
-use anyhow::{Context, Result};
+use anyhow::Result;
 use muse_music::{Note, Score};
 use std::{fs, path::Path};
 
@@ -110,17 +110,7 @@ pub fn write_html(score: &Score, path: &Path) -> Result<()> {
     Ok(())
 }
 pub fn write_pdf(score: &Score, path: &Path) -> Result<()> {
-    let svg = render_svg(score);
-    let options = svg2pdf::usvg::Options::default();
-    let tree = svg2pdf::usvg::Tree::from_str(&svg, &options).context("parse generated SVG")?;
-    let pdf = svg2pdf::to_pdf(
-        &tree,
-        svg2pdf::ConversionOptions::default(),
-        svg2pdf::PageOptions::default(),
-    )
-    .map_err(|error| anyhow::anyhow!("convert SVG to PDF: {error}"))?;
-    fs::write(path, pdf)?;
-    Ok(())
+    muse_music::write_pdf(score, path)
 }
 fn esc(v: &str) -> String {
     v.replace('&', "&amp;")

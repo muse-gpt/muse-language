@@ -7,4 +7,3 @@ license.workspace = true
 [dependencies]
 anyhow.workspace = true
 muse-music = { path = "../muse-music" }
-svg2pdf.workspace = true

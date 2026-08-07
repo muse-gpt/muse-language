@@ -42,7 +42,6 @@ sha2 = "0.10"
 thiserror = "2.0"
 toml = "0.8"
 symphonia = { version = "0.6", default-features = false, features = ["aac", "flac", "isomp4", "mp3", "wav"] }
-svg2pdf = "0.13"
 
 [profile.release]
 lto = true
