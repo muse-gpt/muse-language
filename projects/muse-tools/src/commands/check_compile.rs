@@ -14,6 +14,10 @@ pub(crate) fn check(path: &Path) -> Result<()> {
 
 pub(crate) fn compile(args: &CompileArgs) -> Result<()> {
     match args.emit {
+        crate::app::EmitFormat::Schema => {
+            println!("{}", serde_json::to_string_pretty(&muse_ir::compilation_schema())?);
+            return Ok(());
+        }
         crate::app::EmitFormat::Json => {}
     }
     let compilation = compile_file(&args.script)?;

@@ -4,7 +4,7 @@ use midly::{
     Format, Header, MetaMessage, MidiMessage, Smf, Timing, TrackEvent, TrackEventKind,
     num::{u4, u7, u15, u24, u28},
 };
-use muse_parser::{BlockKind, Declaration, parse};
+use muse_parser::{BlockContent, BlockKind, Declaration, MusicDecl, parse};
 use rusty_mp3::{Mp3Decoder, Mp3Encoder, Mp3EncoderConfig};
 use rustysynth::{SoundFont, Synthesizer, SynthesizerSettings};
 use std::{
@@ -51,7 +51,19 @@ pub fn compose(source: &str) -> Result<Score> {
                 }
                 BlockKind::Music => {
                     if let Some(target) = block.target {
-                        music.insert(target, parse_music(&block.body));
+                        let mut spec = match &block.content {
+                            BlockContent::Music(declaration) => music_spec_from_ast(declaration),
+                            _ => parse_music(&block.body),
+                        };
+                        // Soundfont is intentionally kept as an explicit extension until it
+                        // gets a first-class score AST field.
+                        if spec.soundfont.is_none() {
+                            spec.soundfont = block
+                                .body
+                                .lines()
+                                .find_map(|line| quoted_after(line.trim(), "soundfont"));
+                        }
+                        music.insert(target, spec);
                     }
                 }
                 _ => {}
@@ -101,6 +113,24 @@ struct MusicSpec {
     density: f32,
     soundfont: Option<String>,
     template: Option<String>,
+}
+
+fn music_spec_from_ast(declaration: &MusicDecl) -> MusicSpec {
+    MusicSpec {
+        key: declaration.key.clone(),
+        meter: declaration.meter.as_ref().map(|meter| Meter {
+            beats: meter.beats,
+            beat_unit: meter.beat_unit,
+        }),
+        motif: declaration
+            .motif
+            .iter()
+            .filter_map(|note| parse_note_name(note))
+            .collect(),
+        density: declaration.density.unwrap_or(0.65) as f32,
+        soundfont: None,
+        template: declaration.template.clone(),
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

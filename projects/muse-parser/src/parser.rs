@@ -3,8 +3,8 @@ use muse_types::{Diagnostic, Span};
 
 use crate::{
     ast::{
-        ActDecl, Block, BlockContent, BlockKind, Declaration, EmotionDecl, MappingDecl, OrchestrationDecl, Script,
-        TempoDecl, VisualAssetKind, VisualDecl,
+        ActDecl, Block, BlockContent, BlockKind, Declaration, EmotionDecl, MappingDecl, MeterDecl, MusicDecl,
+        OrchestrationDecl, Script, TempoDecl, VisualAssetKind, VisualDecl,
     },
     diagnostics::from_chumsky,
     lexer::{Token, TokenKind, lex, span},
@@ -381,6 +381,25 @@ fn typed_content(source: &str, kind: BlockKind, body: &str, body_span: Span) -> 
                 })
                 .collect(),
         },
+        BlockKind::Music => BlockContent::Music(MusicDecl {
+            key: quoted_after(body, "key"),
+            meter: body.lines().find_map(|line| {
+                let value = line.split_once("meter")?.1.split_whitespace().next()?;
+                let (beats, unit) = value.split_once('/')?;
+                Some(MeterDecl {
+                    beats: beats.parse().ok()?,
+                    beat_unit: unit.parse().ok()?,
+                    span: body_span,
+                })
+            }),
+            motif: quoted_after(body, "motif")
+                .map(|value| value.split_whitespace().map(str::to_owned).collect())
+                .unwrap_or_default(),
+            template: quoted_after(body, "template"),
+            density: body
+                .lines()
+                .find_map(|line| line.split_once("density")?.1.split_whitespace().next()?.parse().ok()),
+        }),
         _ => {
             let _ = source;
             BlockContent::Raw
@@ -405,6 +424,13 @@ fn values_after(input: &str, marker: &str) -> Vec<String> {
         .match_indices(marker)
         .filter_map(|(start, _)| input[start..].split('"').nth(1).map(str::to_owned))
         .collect()
+}
+
+fn quoted_after(input: &str, keyword: &str) -> Option<String> {
+    input.lines().find_map(|line| {
+        let rest = line.split_once(keyword)?.1.trim();
+        rest.split('"').nth(1).map(str::to_owned)
+    })
 }
 
 fn block_kind(token: &TokenKind) -> Option<BlockKind> {
@@ -524,6 +550,24 @@ mod tests {
             panic!("expected typed tempo content")
         };
         assert_eq!(events[0].bpm, 132.0);
+    }
+
+    #[test]
+    fn lowers_music_fields_to_typed_content() {
+        let result = parse(
+            "timeline { act theme : 0..8 } music for theme { key \"C major\" meter 4/4 motif \"C4 E4\" density 0.8 }",
+        );
+        assert!(result.diagnostics.is_empty());
+        let Declaration::Block(music) = &result.script.declarations[1] else {
+            panic!("expected music block")
+        };
+        let BlockContent::Music(declaration) = &music.content else {
+            panic!("expected typed music content")
+        };
+        assert_eq!(declaration.key.as_deref(), Some("C major"));
+        assert_eq!(declaration.motif, ["C4", "E4"]);
+        assert_eq!(declaration.density, Some(0.8));
+        assert_eq!(declaration.meter.as_ref().map(|m| (m.beats, m.beat_unit)), Some((4, 4)));
     }
 
     #[test]

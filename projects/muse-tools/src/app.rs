@@ -47,7 +47,7 @@ pub(crate) enum Command {
 #[derive(Debug, Args)]
 pub(crate) struct CompileArgs {
     pub(crate) script: PathBuf,
-    /// Render plan emission format. JSON is currently the supported format.
+    /// Render plan emission format.
     #[arg(long, value_enum, default_value_t = EmitFormat::Json)]
     pub(crate) emit: EmitFormat,
 }
@@ -55,6 +55,7 @@ pub(crate) struct CompileArgs {
 #[derive(Debug, Clone, Copy, ValueEnum)]
 pub(crate) enum EmitFormat {
     Json,
+    Schema,
 }
 
 #[derive(Debug, Args)]

@@ -84,7 +84,7 @@ pub fn normalize(score: &Score) -> SemanticScore {
         .map(|n| n.start_tick + n.duration_ticks)
         .max()
         .unwrap_or(measure_ticks);
-    let measure_count = ((end + measure_ticks - 1) / measure_ticks).max(1) as u32;
+    let measure_count = end.div_ceil(measure_ticks).max(1) as u32;
     let mut measures = Vec::with_capacity(measure_count as usize);
     for index in 0..measure_count {
         let start = u64::from(index) * measure_ticks;

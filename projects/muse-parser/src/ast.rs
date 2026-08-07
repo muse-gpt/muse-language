@@ -48,6 +48,7 @@ pub enum BlockContent {
     Intent { emotions: Vec<EmotionDecl> },
     Orchestrate(OrchestrationDecl),
     Visual { elements: Vec<VisualDecl> },
+    Music(MusicDecl),
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -113,6 +114,22 @@ pub enum VisualDecl {
 pub enum VisualAssetKind {
     Image,
     Video,
+}
+
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct MusicDecl {
+    pub key: Option<String>,
+    pub meter: Option<MeterDecl>,
+    pub motif: Vec<String>,
+    pub template: Option<String>,
+    pub density: Option<f64>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct MeterDecl {
+    pub beats: u8,
+    pub beat_unit: u8,
+    pub span: Span,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]

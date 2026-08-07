@@ -121,7 +121,11 @@ pub fn compile(source: &str, settings: RenderSettings) -> Compilation {
                     }
                 }
                 BlockKind::Visual => {
-                    visuals += 1;
+                    if let BlockContent::Visual { elements } = &block.content {
+                        visuals += elements.len().max(1);
+                    } else {
+                        visuals += 1;
+                    }
                     if let Some(target) = block.target
                         && !acts.iter().any(|a| a.name == target)
                     {
