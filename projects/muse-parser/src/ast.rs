@@ -47,6 +47,7 @@ pub enum BlockContent {
     Tempo { events: Vec<TempoDecl> },
     Intent { emotions: Vec<EmotionDecl> },
     Orchestrate(OrchestrationDecl),
+    Visual { elements: Vec<VisualDecl> },
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -83,6 +84,20 @@ pub struct OrchestrationDecl {
 pub struct MappingDecl {
     pub intent: String,
     pub span: Span,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub enum VisualDecl {
+    Background { color: String, span: Span },
+    Asset { kind: VisualAssetKind, uri: String, span: Span },
+    Camera { property: String, value: String, span: Span },
+    Particles { property: String, value: String, span: Span },
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub enum VisualAssetKind {
+    Image,
+    Video,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
