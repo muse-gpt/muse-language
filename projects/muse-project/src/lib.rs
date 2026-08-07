@@ -1,7 +1,6 @@
 //! Project layout, asset metadata, and local skill discovery.
 use anyhow::{Context, Result, bail};
 use muse_types::{ContentHash, MediaInfo, MediaKind};
-use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{fs, path::Path};
 use symphonia::core::{
@@ -10,35 +9,8 @@ use symphonia::core::{
     io::MediaSourceStream,
     meta::MetadataOptions,
 };
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AssetMeta {
-    pub guid: String,
-    pub hash: String,
-    pub version: u32,
-    pub source: AssetSource,
-    pub import_settings: ImportSettings,
-}
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AssetSource {
-    #[serde(rename = "type")]
-    pub source_type: String,
-    pub original_path: String,
-}
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct ImportSettings {
-    pub start_time: Option<f64>,
-    pub duration: Option<f64>,
-    pub frame_rate: Option<u32>,
-}
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SkillManifest {
-    pub name: String,
-    pub version: String,
-    #[serde(default)]
-    pub description: String,
-    #[serde(default)]
-    pub generators: Vec<String>,
-}
+mod types;
+pub use types::{AssetMeta, AssetSource, ImportSettings, SkillManifest};
 pub fn init(path: &Path) -> Result<()> {
     fs::create_dir_all(path.join("assets"))?;
     fs::create_dir_all(path.join("skills"))?;

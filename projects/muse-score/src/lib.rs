@@ -3,6 +3,9 @@ use anyhow::Result;
 use muse_music::{Note, Score};
 use std::{fs, path::Path};
 
+mod semantic;
+pub use semantic::{DurationValue, Measure, NoteColumn, NoteRef, SemanticScore, VoiceMeasure, normalize};
+
 const WIDTH: f32 = 1200.0;
 const SYSTEM_HEIGHT: f32 = 430.0;
 const STAFF_GAP: f32 = 92.0;
