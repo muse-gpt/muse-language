@@ -88,10 +88,25 @@ pub struct MappingDecl {
 
 #[derive(Debug, Clone, Serialize)]
 pub enum VisualDecl {
-    Background { color: String, span: Span },
-    Asset { kind: VisualAssetKind, uri: String, span: Span },
-    Camera { property: String, value: String, span: Span },
-    Particles { property: String, value: String, span: Span },
+    Background {
+        color: String,
+        span: Span,
+    },
+    Asset {
+        kind: VisualAssetKind,
+        uri: String,
+        span: Span,
+    },
+    Camera {
+        property: String,
+        value: String,
+        span: Span,
+    },
+    Particles {
+        property: String,
+        value: String,
+        span: Span,
+    },
 }
 
 #[derive(Debug, Clone, Serialize)]

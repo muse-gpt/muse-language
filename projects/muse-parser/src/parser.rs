@@ -4,7 +4,7 @@ use muse_types::{Diagnostic, Span};
 use crate::{
     ast::{
         ActDecl, Block, BlockContent, BlockKind, Declaration, EmotionDecl, MappingDecl, OrchestrationDecl, Script,
-        TempoDecl,
+        TempoDecl, VisualAssetKind, VisualDecl,
     },
     diagnostics::from_chumsky,
     lexer::{Token, TokenKind, lex, span},
@@ -340,6 +340,47 @@ fn typed_content(source: &str, kind: BlockKind, body: &str, body_span: Span) -> 
             style_references: values_after(body, "style_reference"),
             transition_strategy: body.contains("transition_strategy").then_some("declared".to_owned()),
         }),
+        BlockKind::Visual => BlockContent::Visual {
+            elements: body
+                .lines()
+                .filter_map(|line| {
+                    let line = line.trim();
+                    if let Some(value) = line.strip_prefix("background color") {
+                        return Some(VisualDecl::Background {
+                            color: value.trim().trim_matches('"').to_owned(),
+                            span: body_span,
+                        });
+                    }
+                    if let Some(value) = line.strip_prefix("image") {
+                        return Some(VisualDecl::Asset {
+                            kind: VisualAssetKind::Image,
+                            uri: value.trim().trim_matches('"').to_owned(),
+                            span: body_span,
+                        });
+                    }
+                    if let Some(value) = line.strip_prefix("video") {
+                        return Some(VisualDecl::Asset {
+                            kind: VisualAssetKind::Video,
+                            uri: value.trim().trim_matches('"').to_owned(),
+                            span: body_span,
+                        });
+                    }
+                    if let Some(value) = line.strip_prefix("camera") {
+                        let (property, value) = value.trim().split_once(char::is_whitespace)?;
+                        return Some(VisualDecl::Camera {
+                            property: property.to_owned(),
+                            value: value.trim().to_owned(),
+                            span: body_span,
+                        });
+                    }
+                    line.strip_prefix("particles").map(|value| VisualDecl::Particles {
+                        property: "config".to_owned(),
+                        value: value.trim().to_owned(),
+                        span: body_span,
+                    })
+                })
+                .collect(),
+        },
         _ => {
             let _ = source;
             BlockContent::Raw
