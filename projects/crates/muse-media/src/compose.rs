@@ -55,7 +55,28 @@ fn parse_hex_color(raw: &str) -> Option<(u8, u8, u8)> {
 ///
 /// Prefers the GPU compositor when available (`MUSE_COMPOSITOR=auto|gpu`).
 /// Forced GPU (`MUSE_COMPOSITOR=gpu`) fails explicitly if the backend cannot init.
+/// Incoming shot `xfade` / `flash` blend previous and current looks when active.
 pub fn compose_frame(
+    plan: &RenderPlan,
+    width: u32,
+    height: u32,
+    t: f32,
+    options: &ComposeOptions,
+    cache: &mut HashMap<String, RgbImage>,
+) -> Result<RgbImage> {
+    if let Some(tr) = plan.transition_at_normalized(t) {
+        let from = compose_frame_plain(plan, width, height, tr.from_t, options, cache)?;
+        let to = compose_frame_plain(plan, width, height, t, options, cache)?;
+        let mut blended = lerp_rgb(&from, &to, tr.mix);
+        if tr.flash > 0.0 {
+            apply_flash_rgb(&mut blended, tr.flash);
+        }
+        return Ok(blended);
+    }
+    compose_frame_plain(plan, width, height, t, options, cache)
+}
+
+fn compose_frame_plain(
     plan: &RenderPlan,
     width: u32,
     height: u32,
@@ -73,6 +94,33 @@ pub fn compose_frame(
             Ok(image) => Ok(image),
             Err(_) => compose_frame_cpu(plan, width, height, t, options, cache),
         },
+    }
+}
+
+fn lerp_rgb(a: &RgbImage, b: &RgbImage, mix: f32) -> RgbImage {
+    let mix = mix.clamp(0.0, 1.0);
+    let width = a.width().min(b.width());
+    let height = a.height().min(b.height());
+    RgbImage::from_fn(width, height, |x, y| {
+        let pa = a.get_pixel(x, y);
+        let pb = b.get_pixel(x, y);
+        Rgb([
+            ((pa[0] as f32 * (1.0 - mix) + pb[0] as f32 * mix).round() as u8),
+            ((pa[1] as f32 * (1.0 - mix) + pb[1] as f32 * mix).round() as u8),
+            ((pa[2] as f32 * (1.0 - mix) + pb[2] as f32 * mix).round() as u8),
+        ])
+    })
+}
+
+fn apply_flash_rgb(canvas: &mut RgbImage, amount: f32) {
+    let amount = amount.clamp(0.0, 1.0);
+    if amount <= 0.0 {
+        return;
+    }
+    for pixel in canvas.pixels_mut() {
+        for c in 0..3 {
+            pixel[c] = ((pixel[c] as f32 * (1.0 - amount) + 255.0 * amount).round() as u8).min(255);
+        }
     }
 }
 
