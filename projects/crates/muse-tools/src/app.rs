@@ -42,6 +42,15 @@ pub(crate) enum Command {
         #[command(subcommand)]
         command: McpCommand,
     },
+    /// Report compositor / GPU / encode backend status.
+    Doctor(DoctorArgs),
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct DoctorArgs {
+    /// Emit machine-readable JSON.
+    #[arg(long)]
+    pub(crate) json: bool,
 }
 
 #[derive(Debug, Args)]

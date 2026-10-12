@@ -1,5 +1,6 @@
 mod assets;
 mod check_compile;
+mod doctor;
 mod mcp;
 mod project;
 mod render;
@@ -20,5 +21,6 @@ pub(crate) async fn dispatch(cli: Cli) -> Result<()> {
         Command::Score { command } => score::run(command),
         Command::Skill { command } => project::skill(command),
         Command::Mcp { command } => mcp::run(command).await,
+        Command::Doctor(args) => doctor::doctor(&args),
     }
 }

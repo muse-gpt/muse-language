@@ -17,4 +17,5 @@ muse-music = { path = "../muse-music" }
 muse-score = { path = "../muse-score" }
 muse-project = { path = "../muse-project" }
 muse-types = { path = "../muse-types" }
+serde.workspace = true
 serde_json.workspace = true
