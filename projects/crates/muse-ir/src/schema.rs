@@ -38,6 +38,7 @@ pub struct IrOrchestrationRule {
 #[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct IrVisualLayer {
     pub target: Option<String>,
+    pub scene: Option<String>,
     pub background_color: Option<String>,
     pub images: Vec<String>,
     pub vignette: Option<f32>,
@@ -104,6 +105,7 @@ impl From<&VisualLayer> for IrVisualLayer {
     fn from(value: &VisualLayer) -> Self {
         Self {
             target: value.target.clone(),
+            scene: value.scene.clone(),
             background_color: value.background_color.clone(),
             images: value.images.clone(),
             vignette: value.vignette,

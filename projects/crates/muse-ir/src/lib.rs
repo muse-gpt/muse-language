@@ -41,6 +41,8 @@ pub struct OrchestrationRule {
 #[derive(Debug, Clone, Serialize)]
 pub struct VisualLayer {
     pub target: Option<String>,
+    /// Optional scene tag from `visual for act scene name { ... }`.
+    pub scene: Option<String>,
     pub background_color: Option<String>,
     /// Image URIs declared as `image "..."` inside the visual block (project-relative).
     pub images: Vec<String>,
@@ -266,6 +268,7 @@ pub fn compile(source: &str, settings: RenderSettings) -> Compilation {
                     }
                     visual_layers.push(VisualLayer {
                         target: block.target.clone(),
+                        scene: block.scene.clone(),
                         background_color,
                         images,
                         vignette,
@@ -342,6 +345,55 @@ fn parse_unit_strength(raw: &str) -> Result<f32, &'static str> {
         Ok(value) if (0.0..=1.0).contains(&value) => Ok(value),
         Ok(_) => Err("strength must be between 0 and 1"),
         Err(_) => Err("strength must be a number"),
+    }
+}
+
+impl RenderPlan {
+    /// Highest act/shot end bar used for normalized time mapping.
+    pub fn end_bar(&self) -> u32 {
+        self.acts
+            .iter()
+            .map(|act| act.end_bar)
+            .chain(self.shots.iter().map(|shot| shot.end_bar))
+            .max()
+            .unwrap_or(0)
+    }
+
+    /// Active shot at normalized time `t` in `[0, 1]` across [`Self::end_bar`].
+    pub fn shot_at_normalized(&self, t: f32) -> Option<&Shot> {
+        if self.shots.is_empty() {
+            return None;
+        }
+        let end = self.end_bar();
+        if end == 0 {
+            return None;
+        }
+        let bar = ((t.clamp(0.0, 1.0) as f64) * f64::from(end)).floor() as u32;
+        let bar = bar.min(end.saturating_sub(1));
+        self.shots
+            .iter()
+            .find(|shot| shot.start_bar <= bar && bar < shot.end_bar)
+    }
+
+    /// Base visuals (no scene tag) plus overlays matching the active shot scene.
+    pub fn visuals_at_normalized(&self, t: f32) -> Vec<&VisualLayer> {
+        let mut layers: Vec<&VisualLayer> = self
+            .visuals
+            .iter()
+            .filter(|layer| layer.scene.is_none())
+            .collect();
+        if let Some(shot) = self.shot_at_normalized(t) {
+            layers.extend(
+                self.visuals
+                    .iter()
+                    .filter(|layer| layer.scene.as_deref() == Some(shot.scene.as_str())),
+            );
+        }
+        if layers.is_empty() {
+            self.visuals.iter().collect()
+        } else {
+            layers
+        }
     }
 }
 
@@ -448,5 +500,23 @@ mod tests {
             RenderSettings::default(),
         );
         assert!(!c.is_success());
+    }
+
+    #[test]
+    fn captures_visual_scene_tag() {
+        let c = compile(
+            r##"timeline { act main : 0..8 shot s01 : 0..4 scene ember for main } visual for main scene ember { background color "#1a0c08" }"##,
+            RenderSettings::default(),
+        );
+        let plan = c.plan.expect("valid visual scene");
+        assert_eq!(plan.visuals[0].scene.as_deref(), Some("ember"));
+        assert_eq!(plan.shot_at_normalized(0.0).map(|s| s.id.as_str()), Some("s01"));
+        assert_eq!(
+            plan.visuals_at_normalized(0.0)
+                .iter()
+                .filter_map(|v| v.scene.as_deref())
+                .collect::<Vec<_>>(),
+            ["ember"]
+        );
     }
 }

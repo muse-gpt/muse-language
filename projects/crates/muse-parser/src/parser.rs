@@ -229,6 +229,25 @@ fn parse_block(
     } else {
         None
     };
+    let scene = if matches!(kind, BlockKind::Visual)
+        && identifier(tokens, *index).as_deref() == Some("scene")
+    {
+        *index += 1;
+        let scene = identifier(tokens, *index);
+        *index += usize::from(scene.is_some());
+        if scene.is_none() {
+            missing(
+                source,
+                tokens,
+                start,
+                "`scene` requires a scene name",
+                diagnostics,
+            );
+        }
+        scene
+    } else {
+        None
+    };
     if !consume(tokens, index, TokenKind::LBrace) {
         missing(source, tokens, start, "block requires `{`", diagnostics);
         recover_top_level(tokens, index);
@@ -270,6 +289,7 @@ fn parse_block(
     declarations.push(Declaration::Block(Block {
         kind,
         target,
+        scene,
         body,
         content,
         span: span(source, tokens[start].start, end),
@@ -726,6 +746,19 @@ mod tests {
         assert_eq!(shots[1].id, "s02");
         assert_eq!(shots[1].scene, "illust");
         assert_eq!(shots[1].target.as_deref(), Some("main"));
+    }
+
+    #[test]
+    fn lowers_visual_scene_tag() {
+        let result = parse(
+            "timeline { act main : 0..4 } visual for main scene ember { background color \"#1a0c08\" }",
+        );
+        assert!(result.diagnostics.is_empty());
+        let Declaration::Block(visual) = &result.script.declarations[1] else {
+            panic!("expected visual block")
+        };
+        assert_eq!(visual.target.as_deref(), Some("main"));
+        assert_eq!(visual.scene.as_deref(), Some("ember"));
     }
 
     #[test]

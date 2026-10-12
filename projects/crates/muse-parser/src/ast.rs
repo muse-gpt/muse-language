@@ -33,6 +33,8 @@ pub enum Declaration {
 pub struct Block {
     pub kind: BlockKind,
     pub target: Option<String>,
+    /// Optional scene tag on visual blocks: `visual for main scene ember { ... }`.
+    pub scene: Option<String>,
     /// The original source within the block braces. Semantic lowering owns the
     /// language-specific interpretation of this extensible content.
     pub body: String,
