@@ -51,7 +51,8 @@ const NATIVE_PLATFORMS = [
 /** @type {{ dir: string, publishName?: string }[]} */
 const JS_PACKAGES = [
     { dir: "projects/packages/muse-skills" },
-    { dir: "projects/packages/muse", publishName: "@muse/muse" },
+    { dir: "projects/packages/muse", publishName: "@muse-gpt/muse" },
+    { dir: "projects/packages/muse-unknown-wasm32" },
 ];
 
 function fail(msg) {
@@ -172,7 +173,7 @@ function stagePackageFiles(abs, stage) {
                 fs.copyFileSync(from, to);
             }
         }
-        for (const extra of ["package.json", "readme.md", "README.md", "LICENSE", "bin"]) {
+        for (const extra of ["package.json", "readme.md", "README.md", "bin"]) {
             const from = path.join(abs, extra);
             if (!fs.existsSync(from)) continue;
             const to = path.join(stage, extra);
@@ -196,7 +197,7 @@ function publishNative(version, artifactsRoot) {
     let published = 0;
     let skipped = 0;
     for (const plat of NATIVE_PLATFORMS) {
-        const name = `@muse/muse-${plat.short}`;
+        const name = `@muse-gpt/muse-${plat.short}`;
         const packageDir = path.join(ROOT, "projects/packages", `muse-${plat.short}`);
         const artDir = path.join(artifactsRoot, plat.short);
         if (!fs.existsSync(artDir)) {
@@ -218,13 +219,19 @@ function publishNative(version, artifactsRoot) {
         fs.mkdirSync(path.join(stage, "lib"), { recursive: true });
         fs.copyFileSync(path.join(packageDir, "index.js"), path.join(stage, "index.js"));
         fs.copyFileSync(binPath, path.join(stage, "lib", plat.fileName));
-        if (fs.existsSync(path.join(packageDir, "readme.md"))) {
-            fs.copyFileSync(path.join(packageDir, "readme.md"), path.join(stage, "readme.md"));
+        for (const extra of ["readme.md", "README.md"]) {
+            const from = path.join(packageDir, extra);
+            if (fs.existsSync(from)) fs.copyFileSync(from, path.join(stage, extra));
         }
+        const rawPkg = fs.existsSync(path.join(packageDir, "package.json"))
+            ? readJson(path.join(packageDir, "package.json"))
+            : {};
         writeJson(path.join(stage, "package.json"), {
             name,
             version,
-            description: `Muse native binary for ${plat.short}`,
+            description:
+                rawPkg.description ??
+                `Prebuilt Muse CLI binary for ${plat.short} (optional dependency of @muse-gpt/muse)`,
             type: "module",
             license: "MPL-2.0",
             main: "./index.js",
@@ -232,7 +239,14 @@ function publishNative(version, artifactsRoot) {
             os: plat.os,
             cpu: plat.cpu,
             publishConfig: { access: "public" },
-            repository: { type: "git", url: REPO_URL },
+            homepage: rawPkg.homepage ?? "https://github.com/muse-gpt/muse-language#readme",
+            bugs: rawPkg.bugs ?? { url: "https://github.com/muse-gpt/muse-language/issues" },
+            repository: rawPkg.repository ?? {
+                type: "git",
+                url: REPO_URL,
+                directory: `projects/packages/muse-${plat.short}`,
+            },
+            keywords: rawPkg.keywords ?? ["muse", "native", "cli"],
         });
         const outcome = npmPublish(stage, name, version);
         if (outcome === "published") published += 1;
@@ -251,7 +265,7 @@ function publishJs(version, artifactsRoot) {
     let skipped = 0;
     const optionalNatives = {};
     for (const plat of NATIVE_PLATFORMS) {
-        const n = `@muse/muse-${plat.short}`;
+        const n = `@muse-gpt/muse-${plat.short}`;
         const artDir = path.join(artifactsRoot, plat.short);
         if (fs.existsSync(artDir) || versionExists(n, version)) {
             optionalNatives[n] = version;
@@ -287,7 +301,7 @@ function publishJs(version, artifactsRoot) {
         if (!pkg.repository) {
             pkg.repository = { type: "git", url: REPO_URL };
         }
-        if (name === "@muse/muse") {
+        if (name === "@muse-gpt/muse") {
             pkg.optionalDependencies = { ...(pkg.optionalDependencies ?? {}), ...optionalNatives };
         }
         delete pkg.devDependencies;

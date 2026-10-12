@@ -1,10 +1,18 @@
-﻿{
-    "name": "@muse/muse-unknown-wasm32",
+{
+    "name": "@muse-gpt/muse-unknown-wasm32",
     "version": "0.0.1",
-    "description": "Muse wasm artifact placeholder (wasm32-unknown-unknown)",
+    "description": "Wasm32 delivery stub for Muse - prefer the muse CLI from @muse-gpt/muse",
     "type": "module",
     "license": "MPL-2.0",
     "main": "./lib/muse_wasm.js",
     "files": ["lib", "readme.md"],
-    "publishConfig": { "access": "public" }
+    "publishConfig": { "access": "public" },
+    "homepage": "https://github.com/muse-gpt/muse-language#readme",
+    "bugs": { "url": "https://github.com/muse-gpt/muse-language/issues" },
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/muse-gpt/muse-language.git",
+        "directory": "projects/packages/muse-unknown-wasm32"
+    },
+    "keywords": ["muse", "wasm", "audiovisual"]
 }

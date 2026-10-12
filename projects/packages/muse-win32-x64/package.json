@@ -1,14 +1,20 @@
-﻿{
-    "name": "@muse/muse-win32-x64",
+{
+    "name": "@muse-gpt/muse-win32-x64",
     "version": "0.0.1",
-    "description": "Muse native binary for Windows x64",
+    "description": "Prebuilt Muse CLI binary for Windows x64 (optional dependency of @muse-gpt/muse)",
     "type": "module",
     "license": "MPL-2.0",
     "main": "./index.js",
     "files": ["index.js", "lib", "readme.md"],
     "os": ["win32"],
     "cpu": ["x64"],
-    "publishConfig": {
-        "access": "public"
-    }
+    "publishConfig": { "access": "public" },
+    "homepage": "https://github.com/muse-gpt/muse-language#readme",
+    "bugs": { "url": "https://github.com/muse-gpt/muse-language/issues" },
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/muse-gpt/muse-language.git",
+        "directory": "projects/packages/muse-win32-x64"
+    },
+    "keywords": ["muse", "native", "windows", "cli"]
 }

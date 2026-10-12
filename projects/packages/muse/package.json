@@ -1,7 +1,7 @@
 {
-    "name": "@muse/muse",
+    "name": "@muse-gpt/muse",
     "version": "0.0.1",
-    "description": "Muse audiovisual composition language — CLI and Node entry",
+    "description": "Deterministic audiovisual composition language - muse CLI and Node helpers",
     "type": "module",
     "license": "MPL-2.0",
     "bin": {
@@ -23,6 +23,24 @@
     "engines": {
         "node": ">=20"
     },
+    "keywords": [
+        "muse",
+        "audiovisual",
+        "composition",
+        "cli",
+        "music",
+        "timeline",
+        "deterministic"
+    ],
+    "homepage": "https://github.com/muse-gpt/muse-language#readme",
+    "bugs": {
+        "url": "https://github.com/muse-gpt/muse-language/issues"
+    },
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/muse-gpt/muse-language.git",
+        "directory": "projects/packages/muse"
+    },
     "scripts": {
         "typecheck": "tsc --noEmit"
     },
@@ -31,20 +49,15 @@
         "jiti": "^2.4.2"
     },
     "optionalDependencies": {
-        "@muse/muse-darwin-arm64": "workspace:*",
-        "@muse/muse-darwin-x64": "workspace:*",
-        "@muse/muse-linux-arm64": "workspace:*",
-        "@muse/muse-linux-x64": "workspace:*",
-        "@muse/muse-win32-x64": "workspace:*"
+        "@muse-gpt/muse-darwin-arm64": "workspace:*",
+        "@muse-gpt/muse-darwin-x64": "workspace:*",
+        "@muse-gpt/muse-linux-arm64": "workspace:*",
+        "@muse-gpt/muse-linux-x64": "workspace:*",
+        "@muse-gpt/muse-win32-x64": "workspace:*"
     },
     "devDependencies": {
         "@types/node": "^22.13.10",
         "tsx": "^4.19.3",
         "typescript": "^5.8.3"
-    },
-    "repository": {
-        "type": "git",
-        "url": "git+https://github.com/muse-gpt/muse-language.git",
-        "directory": "projects/packages/muse"
     }
 }

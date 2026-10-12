@@ -14,13 +14,13 @@ importers:
       '@doki-land/nifty':
         specifier: ^0.0.12
         version: 0.0.12
-      '@muse/muse':
+      '@muse-gpt/muse':
         specifier: workspace:*
         version: link:projects/packages/muse
 
   projects/packages/homepage:
     dependencies:
-      '@muse/muse':
+      '@muse-gpt/muse':
         specifier: workspace:*
         version: link:../muse
       '@vmz/core':
@@ -43,19 +43,19 @@ importers:
         specifier: ^2.4.2
         version: 2.7.0
     optionalDependencies:
-      '@muse/muse-darwin-arm64':
+      '@muse-gpt/muse-darwin-arm64':
         specifier: workspace:*
         version: link:../muse-darwin-arm64
-      '@muse/muse-darwin-x64':
+      '@muse-gpt/muse-darwin-x64':
         specifier: workspace:*
         version: link:../muse-darwin-x64
-      '@muse/muse-linux-arm64':
+      '@muse-gpt/muse-linux-arm64':
         specifier: workspace:*
         version: link:../muse-linux-arm64
-      '@muse/muse-linux-x64':
+      '@muse-gpt/muse-linux-x64':
         specifier: workspace:*
         version: link:../muse-linux-x64
-      '@muse/muse-win32-x64':
+      '@muse-gpt/muse-win32-x64':
         specifier: workspace:*
         version: link:../muse-win32-x64
     devDependencies:
