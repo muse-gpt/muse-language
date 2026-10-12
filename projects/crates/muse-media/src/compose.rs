@@ -95,6 +95,10 @@ fn compose_frame_cpu(
         let plate = load_image(uri, options, cache)?;
         blit_cover(&mut canvas, &plate);
     }
+    if let Some((name, mix)) = plan_lut(plan) {
+        let lut = crate::lut::resolve_lut(&name, &options.asset_root)?;
+        crate::lut::apply_lut_rgb(&mut canvas, &lut, mix);
+    }
     if let Some(strength) = plan_bloom(plan) {
         apply_bloom_rgb(&mut canvas, strength);
     }
@@ -200,6 +204,15 @@ pub fn plan_grain(plan: &RenderPlan) -> Option<f32> {
 /// Last declared bloom strength on the plan, if any.
 pub fn plan_bloom(plan: &RenderPlan) -> Option<f32> {
     plan.visuals.iter().rev().find_map(|layer| layer.bloom)
+}
+
+/// Last declared LUT name + mix on the plan, if any.
+pub fn plan_lut(plan: &RenderPlan) -> Option<(String, f32)> {
+    plan.visuals.iter().rev().find_map(|layer| {
+        let name = layer.lut.as_ref()?;
+        let mix = layer.lut_mix.unwrap_or(1.0);
+        Some((name.clone(), mix))
+    })
 }
 
 /// Soft highlight bloom matching the GPU 5×5 threshold blur.

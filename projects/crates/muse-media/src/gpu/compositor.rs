@@ -152,16 +152,26 @@ impl GpuCompositor {
                     },
                     count: None,
                 },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    },
+                    count: None,
+                },
             ],
         });
-        let vignette_pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        let post_pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("muse-post-pl"),
             bind_group_layouts: &[&post_bgl],
             push_constant_ranges: &[],
         });
         let post_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("muse-post-pipeline"),
-            layout: Some(&vignette_pl),
+            layout: Some(&post_pl),
             vertex: wgpu::VertexState {
                 module: &vignette_shader,
                 entry_point: Some("vs_main"),
@@ -242,6 +252,8 @@ impl GpuCompositor {
         let mut vignette_strength = 0.0_f32;
         let mut grain_strength = 0.0_f32;
         let mut bloom_strength = 0.0_f32;
+        let mut lut_name: Option<String> = None;
+        let mut lut_mix = 0.0_f32;
         let mut image_draws: Vec<(RgbaImage, CoverUv)> = Vec::new();
 
         for layer in layers {
@@ -256,6 +268,10 @@ impl GpuCompositor {
             }
             if let Some(strength) = layer.bloom {
                 bloom_strength = strength.clamp(0.0, 1.0);
+            }
+            if let Some(name) = layer.lut.as_ref() {
+                lut_name = Some(name.clone());
+                lut_mix = layer.lut_mix.unwrap_or(1.0).clamp(0.0, 1.0);
             }
             for uri in &layer.images {
                 let path = resolve_asset(uri, &options.asset_root);
@@ -323,7 +339,16 @@ impl GpuCompositor {
         }
 
         let mut post_keep: Option<(wgpu::Texture, wgpu::Buffer, wgpu::BindGroup)> = None;
-        if vignette_strength > 0.0 || grain_strength > 0.0 || bloom_strength > 0.0 {
+        let mut lut_tex_keep: Option<wgpu::Texture> = None;
+        if vignette_strength > 0.0 || grain_strength > 0.0 || bloom_strength > 0.0 || lut_mix > 0.0
+        {
+            let lut_img = match (&lut_name, lut_mix > 0.0) {
+                (Some(name), true) => crate::lut::resolve_lut(name, &options.asset_root)?,
+                _ => crate::lut::resolve_lut("IDENTITY", &options.asset_root)?,
+            };
+            let lut_tex = self.upload_lut_strip(&lut_img)?;
+            let lut_view = lut_tex.create_view(&wgpu::TextureViewDescriptor::default());
+
             let post = self.device.create_texture(&wgpu::TextureDescriptor {
                 label: Some("muse-frame-post"),
                 size: wgpu::Extent3d {
@@ -344,6 +369,8 @@ impl GpuCompositor {
                 grain: grain_strength,
                 bloom: bloom_strength,
                 time: options.time.clamp(0.0, 1.0),
+                lut_mix: if lut_name.is_some() { lut_mix } else { 0.0 },
+                _pad: [0.0; 3],
             };
             let uniform_buf = self.device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("muse-post-uniform"),
@@ -369,6 +396,10 @@ impl GpuCompositor {
                         binding: 2,
                         resource: uniform_buf.as_entire_binding(),
                     },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: wgpu::BindingResource::TextureView(&lut_view),
+                    },
                 ],
             });
             {
@@ -391,6 +422,7 @@ impl GpuCompositor {
                 pass.draw(0..6, 0..1);
             }
             post_keep = Some((post, uniform_buf, bind_group));
+            lut_tex_keep = Some(lut_tex);
         }
 
         let padded_bytes_per_row = align_256(options.width * 4);
@@ -431,6 +463,7 @@ impl GpuCompositor {
         self.queue.submit(Some(encoder.finish()));
         drop(upload_keep);
         drop(post_keep);
+        drop(lut_tex_keep);
 
         let slice = output_buffer.slice(..);
         let (tx, rx) = std::sync::mpsc::channel();
@@ -534,6 +567,43 @@ impl GpuCompositor {
 
         Ok((texture, uniform_buf, bind_group))
     }
+
+    fn upload_lut_strip(&self, img: &RgbaImage) -> Result<wgpu::Texture> {
+        let texture = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("muse-lut-strip"),
+            size: wgpu::Extent3d {
+                width: img.width(),
+                height: img.height().max(1),
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        self.queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            img.as_raw(),
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(img.width() * 4),
+                rows_per_image: Some(img.height().max(1)),
+            },
+            wgpu::Extent3d {
+                width: img.width(),
+                height: img.height().max(1),
+                depth_or_array_layers: 1,
+            },
+        );
+        Ok(texture)
+    }
 }
 
 #[repr(C)]
@@ -552,6 +622,8 @@ struct PostUniforms {
     grain: f32,
     bloom: f32,
     time: f32,
+    lut_mix: f32,
+    _pad: [f32; 3],
 }
 
 #[derive(Clone, Copy)]
@@ -663,11 +735,16 @@ struct Post {
     grain: f32,
     bloom: f32,
     time: f32,
+    lut_mix: f32,
+    _p0: f32,
+    _p1: f32,
+    _p2: f32,
 };
 
 @group(0) @binding(0) var src_tex: texture_2d<f32>;
 @group(0) @binding(1) var src_samp: sampler;
 @group(0) @binding(2) var<uniform> post: Post;
+@group(0) @binding(3) var lut_tex: texture_2d<f32>;
 
 struct VsOut {
     @builtin(position) pos: vec4<f32>,
@@ -697,6 +774,12 @@ fn soft_bloom(uv: vec2<f32>) -> vec3<f32> {
     return acc / 25.0;
 }
 
+fn grade_lut(color: vec3<f32>) -> vec3<f32> {
+    let luma = clamp(dot(color, vec3<f32>(0.2126, 0.7152, 0.0722)), 0.0, 1.0);
+    let graded = textureSample(lut_tex, src_samp, vec2<f32>(luma, 0.5)).rgb;
+    return mix(color, graded, post.lut_mix);
+}
+
 @vertex
 fn vs_main(@builtin(vertex_index) idx: u32) -> VsOut {
     var positions = array<vec2<f32>, 6>(
@@ -724,6 +807,7 @@ fn vs_main(@builtin(vertex_index) idx: u32) -> VsOut {
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     var color = textureSample(src_tex, src_samp, in.uv).rgb;
+    color = grade_lut(color);
     color += soft_bloom(in.uv) * post.bloom * 2.5;
     let d = distance(in.uv, vec2<f32>(0.5, 0.5)) * 1.41421356;
     let edge = smoothstep(0.25, 0.95, d);
