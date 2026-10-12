@@ -96,21 +96,30 @@ pub(crate) fn render(args: &RenderArgs) -> Result<()> {
     match format {
         RenderFormat::Mp4 => {
             let plan = compile_with_project_settings(&script, args.project.as_deref())?;
-            let stamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
-            let wav = env::temp_dir().join(format!("muse-render-audio-{stamp}.wav"));
-            let score = muse_music::compose(&source)
-                .with_context(|| format!("cannot compose {}", script.display()))?;
-            muse_music::write_wav(&score, &wav)?;
+            // Full-score WAV can take minutes on long plans; skip it when `--max-duration`
+            // is set (smoke / partial encodes use silence or a short bed instead).
+            let (audio_wav, temp_wav) = if args.max_duration.is_some() {
+                (None, None)
+            } else {
+                let stamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
+                let wav = env::temp_dir().join(format!("muse-render-audio-{stamp}.wav"));
+                let score = muse_music::compose(&source)
+                    .with_context(|| format!("cannot compose {}", script.display()))?;
+                muse_music::write_wav(&score, &wav)?;
+                (Some(wav.clone()), Some(wav))
+            };
             muse_media::render_mp4_with(
                 &plan,
                 &output,
                 muse_media::Mp4Options {
                     asset_root,
-                    audio_wav: Some(wav.clone()),
+                    audio_wav,
                     max_duration_seconds: args.max_duration,
                 },
             )?;
-            let _ = fs::remove_file(wav);
+            if let Some(wav) = temp_wav {
+                let _ = fs::remove_file(wav);
+            }
         }
         RenderFormat::Wav => {
             let score =
