@@ -3,7 +3,15 @@ use crate::{
     commands::check_compile,
 };
 use anyhow::{Context, Result, bail};
-use std::path::Path;
+use std::{fs, path::Path};
+
+fn ensure_parent(path: &Path) -> Result<()> {
+    if let Some(parent) = path.parent().filter(|parent| !parent.as_os_str().is_empty()) {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("cannot create output directory {}", parent.display()))?;
+    }
+    Ok(())
+}
 
 pub(crate) fn preview(script: &Path) -> Result<()> {
     let plan = check_compile::compile_file(script)?
@@ -20,6 +28,7 @@ pub(crate) fn render(args: &RenderArgs) -> Result<()> {
         Some(format) => format,
         None => format_from_path(&args.output)?,
     };
+    ensure_parent(&args.output)?;
     let source = check_compile::source_file(&args.script)?;
     match format {
         RenderFormat::Mp4 => {
@@ -43,6 +52,7 @@ pub(crate) fn render(args: &RenderArgs) -> Result<()> {
 }
 
 pub(crate) fn export(args: &ExportArgs) -> Result<()> {
+    ensure_parent(&args.output)?;
     let source = check_compile::source_file(&args.script)?;
     let score = muse_music::compose(&source).with_context(|| format!("cannot compose {}", args.script.display()))?;
     match args.format {

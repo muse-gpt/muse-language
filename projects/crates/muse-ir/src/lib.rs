@@ -1,5 +1,5 @@
 //! Semantic validation and render-plan construction for Muse scripts.
-use muse_parser::{BlockContent, BlockKind, Declaration, parse};
+use muse_parser::{BlockContent, BlockKind, Declaration, VisualDecl, parse};
 use muse_types::{Diagnostic, RenderSettings, Span};
 use serde::Serialize;
 use std::collections::BTreeSet;
@@ -28,12 +28,18 @@ pub struct OrchestrationRule {
     pub transition_strategy: Option<String>,
 }
 #[derive(Debug, Clone, Serialize)]
+pub struct VisualLayer {
+    pub target: Option<String>,
+    pub background_color: Option<String>,
+}
+#[derive(Debug, Clone, Serialize)]
 pub struct RenderPlan {
     pub settings: RenderSettings,
     pub duration_seconds: f64,
     pub acts: Vec<Act>,
     pub assets: Vec<Asset>,
     pub visual_layers: usize,
+    pub visuals: Vec<VisualLayer>,
     pub transitions: usize,
     pub intents: Vec<String>,
     pub orchestration: Vec<OrchestrationRule>,
@@ -61,6 +67,7 @@ pub fn compile(source: &str, settings: RenderSettings) -> Compilation {
     let mut names = BTreeSet::new();
     let mut bpm = 120.0;
     let mut visuals = 0;
+    let mut visual_layers = Vec::new();
     let mut transitions = 0;
     let mut intents = Vec::new();
     let mut orchestration = Vec::new();
@@ -121,19 +128,29 @@ pub fn compile(source: &str, settings: RenderSettings) -> Compilation {
                     }
                 }
                 BlockKind::Visual => {
+                    let mut background_color = None;
                     if let BlockContent::Visual { elements } = &block.content {
                         visuals += elements.len().max(1);
+                        for element in elements {
+                            if let VisualDecl::Background { color, .. } = element {
+                                background_color = Some(color.trim().trim_matches('"').to_owned());
+                            }
+                        }
                     } else {
                         visuals += 1;
                     }
-                    if let Some(target) = block.target
-                        && !acts.iter().any(|a| a.name == target)
+                    if let Some(target) = &block.target
+                        && !acts.iter().any(|a| a.name == *target)
                     {
                         diagnostics.push(Diagnostic::error(
                             format!("unknown visual target `{target}`"),
                             block.span,
                         ));
                     }
+                    visual_layers.push(VisualLayer {
+                        target: block.target.clone(),
+                        background_color,
+                    });
                 }
                 BlockKind::Orchestrate => {
                     let target = block.target.unwrap_or_else(|| "entire_song".to_owned());
@@ -188,6 +205,7 @@ pub fn compile(source: &str, settings: RenderSettings) -> Compilation {
         acts,
         assets,
         visual_layers: visuals,
+        visuals: visual_layers,
         transitions,
         intents,
         orchestration,
@@ -213,5 +231,16 @@ mod tests {
         let plan = c.plan.expect("valid orchestration");
         assert_eq!(plan.orchestration[0].mappings, ["loneliness"]);
         assert_eq!(plan.orchestration[0].hard_constraints, ["no_glitch"]);
+    }
+
+    #[test]
+    fn captures_visual_background_color() {
+        let c = compile(
+            r##"timeline { act main : 0..4 } visual for main { background color "#0b1524" }"##,
+            RenderSettings::default(),
+        );
+        let plan = c.plan.expect("valid visual");
+        assert_eq!(plan.visuals.len(), 1);
+        assert_eq!(plan.visuals[0].background_color.as_deref(), Some("#0b1524"));
     }
 }

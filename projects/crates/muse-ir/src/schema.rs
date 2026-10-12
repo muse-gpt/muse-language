@@ -2,7 +2,7 @@
 //!
 //! These DTOs intentionally do not expose parser AST nodes. They are the
 //! versioned contract consumed by CLI `--emit json` and MCP clients.
-use crate::{Act, Asset, OrchestrationRule, RenderPlan};
+use crate::{Act, Asset, OrchestrationRule, RenderPlan, VisualLayer};
 use muse_types::RenderSettings;
 use schemars::JsonSchema;
 use serde::Serialize;
@@ -28,12 +28,18 @@ pub struct IrOrchestrationRule {
     pub transition_strategy: Option<String>,
 }
 #[derive(Debug, Clone, Serialize, JsonSchema)]
+pub struct IrVisualLayer {
+    pub target: Option<String>,
+    pub background_color: Option<String>,
+}
+#[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct CompilationDocument {
     pub settings: RenderSettings,
     pub duration_seconds: f64,
     pub acts: Vec<IrAct>,
     pub assets: Vec<IrAsset>,
     pub visual_layers: usize,
+    pub visuals: Vec<IrVisualLayer>,
     pub transitions: usize,
     pub intents: Vec<String>,
     pub orchestration: Vec<IrOrchestrationRule>,
@@ -68,6 +74,14 @@ impl From<&OrchestrationRule> for IrOrchestrationRule {
         }
     }
 }
+impl From<&VisualLayer> for IrVisualLayer {
+    fn from(value: &VisualLayer) -> Self {
+        Self {
+            target: value.target.clone(),
+            background_color: value.background_color.clone(),
+        }
+    }
+}
 impl From<&RenderPlan> for CompilationDocument {
     fn from(value: &RenderPlan) -> Self {
         Self {
@@ -76,6 +90,7 @@ impl From<&RenderPlan> for CompilationDocument {
             acts: value.acts.iter().map(Into::into).collect(),
             assets: value.assets.iter().map(Into::into).collect(),
             visual_layers: value.visual_layers,
+            visuals: value.visuals.iter().map(Into::into).collect(),
             transitions: value.transitions,
             intents: value.intents.clone(),
             orchestration: value.orchestration.iter().map(Into::into).collect(),
