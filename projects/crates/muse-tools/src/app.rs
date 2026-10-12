@@ -17,7 +17,7 @@ pub(crate) enum Command {
     /// Compile a Muse source file and print its render plan as JSON.
     Compile(CompileArgs),
     /// Render a low-resolution PNG/WAV preview beside the source file.
-    Preview { script: PathBuf },
+    Preview(PreviewArgs),
     /// Render a score or audiovisual output.
     Render(RenderArgs),
     /// Export a composed score to a portable format.
@@ -42,6 +42,20 @@ pub(crate) enum Command {
         #[command(subcommand)]
         command: McpCommand,
     },
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct PreviewArgs {
+    pub(crate) script: PathBuf,
+    /// Linear scale applied to plan width/height (0.01–1.0). Default 0.1.
+    #[arg(long, default_value_t = 0.1)]
+    pub(crate) scale: f32,
+    /// Hard cap on preview frames. Default 240.
+    #[arg(long, default_value_t = 240)]
+    pub(crate) max_frames: usize,
+    /// Hard cap on guide WAV seconds. Default 10.
+    #[arg(long, default_value_t = 10.0)]
+    pub(crate) max_audio_seconds: f64,
 }
 
 #[derive(Debug, Args)]

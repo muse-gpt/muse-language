@@ -4,12 +4,34 @@ use muse_ir::RenderPlan;
 use serde::Serialize;
 use std::{fs, path::Path};
 
+#[derive(Debug, Clone, Copy)]
+pub struct PreviewOptions {
+    pub scale: f32,
+    pub max_frames: usize,
+    pub max_audio_seconds: f64,
+}
+
+impl Default for PreviewOptions {
+    fn default() -> Self {
+        Self {
+            scale: 0.1,
+            max_frames: 240,
+            max_audio_seconds: 10.0,
+        }
+    }
+}
+
 #[derive(Debug, Serialize)]
 pub struct PreviewManifest {
     pub frames: usize,
     pub width: u32,
     pub height: u32,
-    pub duration_seconds: f64,
+    pub scale: f32,
+    /// Full plan duration from the compile contract.
+    pub plan_duration_seconds: f64,
+    /// Duration actually covered by written frames (`frames / frame_rate`).
+    pub rendered_duration_seconds: f64,
+    /// Duration of the guide WAV (may be shorter than rendered video).
     pub audio_seconds: f64,
     pub audio_file: String,
     pub background_color: Option<String>,
@@ -44,15 +66,28 @@ fn parse_hex_color(raw: &str) -> Option<(u8, u8, u8)> {
 }
 
 pub fn render_preview(plan: &RenderPlan, out: &Path, scale: f32) -> Result<PreviewManifest> {
+    render_preview_with(
+        plan,
+        out,
+        PreviewOptions {
+            scale,
+            ..PreviewOptions::default()
+        },
+    )
+}
+
+pub fn render_preview_with(plan: &RenderPlan, out: &Path, options: PreviewOptions) -> Result<PreviewManifest> {
+    let scale = options.scale.clamp(0.01, 1.0);
     let width = ((plan.settings.width as f32 * scale).max(16.0)) as u32;
     let height = ((plan.settings.height as f32 * scale).max(16.0)) as u32;
     fs::create_dir_all(out)?;
     let (r, g, b, background_color) = plan_background_rgb(plan);
-    let frames = ((plan.duration_seconds * plan.settings.frame_rate as f64).ceil() as usize).clamp(1, 240);
+    let full_frames =
+        ((plan.duration_seconds * plan.settings.frame_rate as f64).ceil() as usize).max(1);
+    let frames = full_frames.min(options.max_frames.max(1));
     let fill = Rgb([r, g, b]);
     for index in 0..frames {
         let mut image = RgbImage::from_pixel(width, height, fill);
-        // Keep a thin progress bar so consecutive solid frames are distinguishable.
         let progress_x = ((index as f32 / frames.saturating_sub(1).max(1) as f32) * (width.saturating_sub(1) as f32))
             as u32;
         for y in (height.saturating_sub(4))..height {
@@ -60,13 +95,19 @@ pub fn render_preview(plan: &RenderPlan, out: &Path, scale: f32) -> Result<Previ
         }
         image.save(out.join(format!("frame-{index:04}.png")))?;
     }
-    let audio_seconds = plan.duration_seconds.min(10.0);
+    let rendered_duration_seconds = frames as f64 / plan.settings.frame_rate.max(1) as f64;
+    let audio_seconds = plan
+        .duration_seconds
+        .min(options.max_audio_seconds.max(0.0))
+        .min(rendered_duration_seconds);
     crate::write_wav(&out.join("preview.wav"), audio_seconds, plan.settings.sample_rate)?;
     let manifest = PreviewManifest {
         frames,
         width,
         height,
-        duration_seconds: plan.duration_seconds,
+        scale,
+        plan_duration_seconds: plan.duration_seconds,
+        rendered_duration_seconds,
         audio_seconds,
         audio_file: "preview.wav".into(),
         background_color,
@@ -96,6 +137,8 @@ mod tests {
         let out = root.join("preview");
         let manifest = render_preview(&plan, &out, 0.1).unwrap();
         assert_eq!(manifest.background_color.as_deref(), Some("#0b1524"));
+        assert!(manifest.rendered_duration_seconds <= manifest.plan_duration_seconds + f64::EPSILON);
+        assert!(manifest.audio_seconds <= manifest.rendered_duration_seconds + f64::EPSILON);
         let png = image::open(out.join("frame-0000.png")).unwrap().to_rgb8();
         assert_eq!(*png.get_pixel(0, 0), Rgb([0x0b, 0x15, 0x24]));
         let _ = fs::remove_dir_all(root);

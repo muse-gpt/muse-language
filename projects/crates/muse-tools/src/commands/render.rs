@@ -1,5 +1,5 @@
 use crate::{
-    app::{ExportArgs, ExportFormat, RenderArgs, RenderFormat},
+    app::{ExportArgs, ExportFormat, PreviewArgs, RenderArgs, RenderFormat},
     commands::check_compile,
 };
 use anyhow::{Context, Result, bail};
@@ -13,13 +13,32 @@ fn ensure_parent(path: &Path) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn preview(script: &Path) -> Result<()> {
-    let plan = check_compile::compile_file(script)?
+pub(crate) fn preview(args: &PreviewArgs) -> Result<()> {
+    let plan = check_compile::compile_file(&args.script)?
         .plan
         .context("cannot preview an invalid script")?;
-    let output = script.parent().unwrap_or_else(|| Path::new(".")).join("preview");
-    let manifest = muse_media::render_preview(&plan, &output, 0.1)?;
-    println!("preview written to {} ({} frames)", output.display(), manifest.frames);
+    let output = args
+        .script
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .join("preview");
+    let manifest = muse_media::render_preview_with(
+        &plan,
+        &output,
+        muse_media::PreviewOptions {
+            scale: args.scale,
+            max_frames: args.max_frames,
+            max_audio_seconds: args.max_audio_seconds,
+        },
+    )?;
+    println!(
+        "preview written to {} ({} frames, {:.2}s rendered / {:.2}s plan, audio {:.2}s)",
+        output.display(),
+        manifest.frames,
+        manifest.rendered_duration_seconds,
+        manifest.plan_duration_seconds,
+        manifest.audio_seconds
+    );
     Ok(())
 }
 

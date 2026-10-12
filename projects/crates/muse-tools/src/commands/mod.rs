@@ -13,7 +13,7 @@ pub(crate) async fn dispatch(cli: Cli) -> Result<()> {
         Command::Init { path } => project::init(path.as_deref()),
         Command::Check { script } => check_compile::check(&script),
         Command::Compile(args) => check_compile::compile(&args),
-        Command::Preview { script } => render::preview(&script),
+        Command::Preview(args) => render::preview(&args),
         Command::Render(args) => render::render(&args),
         Command::Export(args) => render::export(&args),
         Command::Asset { command } => assets::run(command),

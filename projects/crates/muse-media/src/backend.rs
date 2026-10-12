@@ -37,7 +37,7 @@ pub struct LocalPreviewBackend;
 
 impl RenderBackend for LocalPreviewBackend {
     fn render(&self, plan: &RenderPlan, output: &Path) -> Result<()> {
-        crate::render_preview(plan, output, 0.1).map(|_| ())
+        crate::render_preview_with(plan, output, crate::PreviewOptions::default()).map(|_| ())
     }
 }
 
