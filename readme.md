@@ -1,40 +1,102 @@
 # Muse
 
-Muse is a pure-Rust audiovisual composition language and command-line tool. Scripts describe human intent, orchestration rules, musical time, layers, and assets; the compiler validates them and produces a deterministic render plan.
+[Examples](./examples) · [`@muse-gpt/muse`](https://www.npmjs.com/package/@muse-gpt/muse) · [`@muse-gpt/muse-skills`](https://www.npmjs.com/package/@muse-gpt/muse-skills)
 
-Muse uses three distinct authoring layers:
+## 💡 What is Muse?
 
-1. `intent` records creative context such as emotion labels and references.
-2. `orchestrate` translates intent into cross-dimensional mappings, hard constraints, soft preferences, style references, and section-level transition strategy.
-3. `timeline`, `music`, and `visual` declare executable content. Render engines consume the compiled plan but do not influence Muse syntax or semantics.
+Muse is an **audiovisual composition language**. You write intent, orchestration rules, musical time, layers, and assets in a `.muse` script; the toolchain validates the script and produces a **deterministic** render plan. Same source and inputs always yield a reviewable result.
 
-`directing` remains accepted as a compatibility alias for earlier scripts, but new scripts must use `orchestrate`.
+Muse is **not** a timeline editor GUI, and it is **not** a black box that pastes prompts into a renderer. Render engines only consume the plan — they do not define Muse syntax or semantics.
 
-## Build
+Authoring has three layers:
 
-```powershell
-cargo build --release
-.\target\release\muse.exe init demo
-cd demo
-..\target\release\muse.exe check main.muse
-..\target\release\muse.exe preview main.muse
+1. `intent` — creative context (emotion, references, …)
+2. `orchestrate` — cross-cutting maps, hard constraints, soft preferences, section transitions (`directing` remains a compatibility alias)
+3. `timeline` / `music` / `visual` — executable content
+
+## 🚀 Getting started
+
+### 1. Agent / prompt (recommended)
+
+```bash
+npm install -g @muse-gpt/muse
+npx @muse-gpt/muse-skills
 ```
 
-`preview` produces PNG frames, a WAV guide track, and a manifest. Asset metadata is YAML and suitable for Git. The initial native media path supports PNG/JPEG/WebP and WAV/FLAC/MP3. The command surface includes an AV1 MP4 render target, but final AV1 MP4 muxing remains gated until its pure-Rust encoder integration is enabled; it fails explicitly rather than claiming a successful MP4 export.
+Then ask your coding agent:
 
-## Creator Skills
+```text
+Write a minimal .muse for this theme with intent, orchestrate, timeline, and one melodic motif, then run muse check.
+```
 
-Repository skills are organized around the person and the work they are doing, not around compiler internals:
+### 2. Manual install
 
-- `muse-creator`: choose a workflow from an open-ended idea.
-- `muse-composer`: compose, arrange, notate, and export music.
-- `muse-science-video`: build fact-checked science and knowledge explainers.
-- `muse-short-video`: design vertical short-form videos and platform variants.
-- `muse-filmmaker`: develop scenes, shot language, narrative arcs, and sound design.
-- `muse-visual-artist`: create visual systems, motion, particles, and generative scenes.
-- `muse-lesson`: turn learning objectives into teachable audiovisual lessons.
-- `muse-podcast`: structure podcasts, interviews, and sound narratives.
-- `muse-game-cinematic`: coordinate game states, music, and cinematics.
-- `muse-publish`: validate, preview, and package deliverables for release.
+```bash
+npm install -g @muse-gpt/muse
+muse doctor
+muse init score_a
+cd score_a
+muse check main.muse
+muse preview main.muse
+```
 
-Each skill has a `SKILL.md`, an audience-specific trigger description, and only the references needed for that workflow. Project-local versioned manifests remain under `skills/<skill-name>/skill.yaml`; run `muse mcp serve` to expose the four project tools over stdio.
+`preview` writes low-resolution PNG frames, a WAV guide track, and a manifest.
+
+## ✨ Highlights
+
+- **Intent → plan** — lock constraints and structure before export
+- **Deterministic** — plans and previews are reviewable, not one-shot luck
+- **Multi-entry projects** — a project can declare several entries; each entry can declare several outputs
+- **Creator skills** — workflows for composing, shorts, explainers, publish, … — not compiler internals
+
+## 📊 How Muse compares
+
+| | Muse | DAW / NLE | Prompt-to-video kits |
+| --- | --- | --- | --- |
+| Source of truth | `.muse` script + plan | Timeline UI | Chat / prompts |
+| Reproducibility | Same input → same plan | Session-dependent | Often non-deterministic |
+| Agent-friendly | First-class text + skills | Weak | Strong prompts, weak contract |
+| What you ship | Validated plan + exports | Project file / renders | Clip |
+
+## 📝 Syntax primer
+
+Comments use `#`.
+
+```muse
+namespace motif_a;
+
+intent {
+  emotion "urgent resolve" intensity 0.8 for theme
+}
+
+orchestrate for theme {
+  hard_constraints: ["keep the motif recognizable"]
+  soft_preferences: ["strings before brass"]
+}
+
+timeline {
+  act theme : 0..8
+}
+
+tempo { at 0 bpm 120 }
+
+music for theme {
+  key "C major"
+  meter 4/4
+  motif "C4 E4 G4 C5"
+  template "game_battle"
+}
+```
+
+## 🧪 Examples
+
+| Example | What it shows |
+| --- | --- |
+| [`minimal-theme.muse`](./examples/minimal-theme.muse) | Smallest complete composition |
+| [`game-battle-arc.muse`](./examples/game-battle-arc.muse) | Multi-act arc + `orchestrate` |
+| [`accidentals.muse`](./examples/accidentals.muse) | Accidentals in a motif |
+
+```bash
+muse check examples/minimal-theme.muse
+muse export examples/minimal-theme.muse --format midi -o out.mid
+```

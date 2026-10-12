@@ -1,22 +1,8 @@
 {
     "name": "@muse-gpt/muse-skills",
     "version": "0.0.0",
+    "description": "Agent skills for Muse creators - compose, shorts, explainers, publish",
     "type": "module",
-    "description": "Agent skills for Muse creators. Install with npx @muse-gpt/muse-skills.",
-    "repository": {
-        "type": "git",
-        "url": "git+https://github.com/muse-gpt/muse-language.git",
-        "directory": "projects/packages/muse-skills"
-    },
-    "homepage": "https://github.com/muse-gpt/muse-language/tree/dev/projects/packages/muse-skills",
-    "keywords": [
-        "muse",
-        "audiovisual",
-        "composition",
-        "agent-skills",
-        "skills",
-        "agents"
-    ],
     "license": "MPL-2.0",
     "bin": {
         "muse-skills": "bin/muse-skills"
@@ -28,6 +14,25 @@
     ],
     "engines": {
         "node": ">=20"
+    },
+    "keywords": [
+        "muse",
+        "audiovisual",
+        "composition",
+        "agent-skills",
+        "skills",
+        "agents",
+        "claude-code",
+        "codex"
+    ],
+    "homepage": "https://github.com/muse-gpt/muse-language#readme",
+    "bugs": {
+        "url": "https://github.com/muse-gpt/muse-language/issues"
+    },
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/muse-gpt/muse-language.git",
+        "directory": "projects/packages/muse-skills"
     },
     "publishConfig": {
         "access": "public"

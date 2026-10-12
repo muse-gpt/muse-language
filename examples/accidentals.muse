@@ -1,6 +1,7 @@
-﻿namespace accidentals;
+namespace accidentals;
 
-# C major 涓殑 C# 闇€瑕佷复鏃跺崌鍙凤紱绗簩灏忚妭搴旈噸鏂版樉绀鸿璁板彿銆?timeline {
+# In C major, C# needs a temporary sharp; the next bar should show the accidental again.
+timeline {
   act study : 0..8
 }
 

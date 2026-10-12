@@ -1,15 +1,24 @@
 {
     "name": "muse-language",
     "displayName": "Muse Language",
-    "description": "Syntax highlighting for Muse (.muse) audiovisual composition scripts",
+    "description": "Syntax highlighting and language guide for Muse (.muse) audiovisual composition scripts",
     "version": "0.0.0",
-    "publisher": "muse",
+    "publisher": "muse-gpt",
     "license": "MPL-2.0",
+    "private": true,
     "engines": {
         "vscode": "^1.85.0"
     },
     "categories": [
-        "Programming Languages"
+        "Programming Languages",
+        "Themes"
+    ],
+    "keywords": [
+        "muse",
+        "audiovisual",
+        "composition",
+        "syntax",
+        "highlighting"
     ],
     "activationEvents": [
         "onLanguage:muse"
@@ -49,6 +58,10 @@
                 "title": "Muse: Open Language Guide"
             }
         ]
+    },
+    "homepage": "https://github.com/muse-gpt/muse-language#readme",
+    "bugs": {
+        "url": "https://github.com/muse-gpt/muse-language/issues"
     },
     "repository": {
         "type": "git",

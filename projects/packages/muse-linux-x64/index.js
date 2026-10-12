@@ -1,2 +1,2 @@
-﻿/** Platform package marker. The `muse` CLI loads `lib/muse`. */
+﻿/** Platform package marker. `@muse-gpt/muse` loads `lib/muse`. */
 export default null;

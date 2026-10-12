@@ -1,15 +1,15 @@
-﻿# Muse examples
+﻿# Examples
 
-The examples are source-first. Generated media belongs in a local `dist` directory and is not committed.
+Runnable `.muse` demos. Write generated media to a local folder; do not commit outputs.
 
-```powershell
-cargo run -p muse-tools -- export examples/game-battle-arc.muse --format midi -o examples/dist/game-battle-arc.mid
-cargo run -p muse-tools -- export examples/game-battle-arc.muse --format musicxml -o examples/dist/game-battle-arc.musicxml
-cargo run -p muse-tools -- export examples/game-battle-arc.muse --format pdf -o examples/dist/game-battle-arc.pdf
-cargo run -p muse-tools -- export examples/game-battle-arc.muse --format svg -o examples/dist/game-battle-arc.svg
-cargo run -p muse-tools -- export examples/game-battle-arc.muse --format html -o examples/dist/game-battle-arc.html
-cargo run -p muse-tools -- render examples/game-battle-arc.muse --format wav -o examples/dist/game-battle-arc.wav
-cargo run -p muse-tools -- render examples/game-battle-arc.muse --format mp3 -o examples/dist/game-battle-arc.mp3
+| File | Shows |
+| --- | --- |
+| [`minimal-theme.muse`](./minimal-theme.muse) | Smallest complete composition |
+| [`game-battle-arc.muse`](./game-battle-arc.muse) | Five-act arc + `orchestrate` |
+| [`accidentals.muse`](./accidentals.muse) | Accidentals in a motif |
+
+```bash
+muse check examples/minimal-theme.muse
+muse export examples/minimal-theme.muse --format midi -o out.mid
+muse preview examples/minimal-theme.muse
 ```
-
-`game-battle-arc.muse` demonstrates a deterministic five-act battle arc. `minimal-theme.muse` is the smallest complete composition.

@@ -3,7 +3,7 @@
     "version": "0.0.1",
     "private": true,
     "type": "module",
-    "description": "Muse marketing homepage (VMZ static site)",
+    "description": "Muse product homepage",
     "scripts": {
         "check": "node ../../../scripts/ensure-vmz-host-manifest.mjs && vmz check .",
         "build": "node ../../../scripts/ensure-vmz-host-manifest.mjs && vmz build --release --profile static .",

@@ -1,5 +1,5 @@
-/** Public Node entry for `@muse/muse`. Prefer the `muse` bin → @vmz/commander → native Rust. */
-export const name = "@muse/muse";
-export const version = "0.0.1";
+/** Public Node entry for `@muse-gpt/muse`. Prefer the `muse` bin for end users. */
+export const name = "@muse-gpt/muse";
+export const version = "0.0.0";
 
 export { buildMuseCli, runCli, localesRoot, resolveNativeMuse, runNative } from "./cli/index.js";

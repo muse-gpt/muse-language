@@ -10,7 +10,7 @@
     </header>
     <main>
       <section class="muse-home__hero" aria-labelledby="muse-hero-title">
-        <Badge tone="brand">Audiovisual composition · Rust core</Badge>
+        <Badge tone="brand">Audiovisual composition language</Badge>
         <h1 id="muse-hero-title">Compose what you mean.</h1>
         <p class="muse-home__lede">
           Muse turns creative direction into a deterministic plan for sound, image, and time.
@@ -29,7 +29,7 @@
       </section>
 
       <section class="muse-home__install" aria-label="Install">
-        <Card title="Install" description="npm entry exposes the muse CLI via @vmz/commander; native work runs in Rust.">
+        <Card title="Install" description="Install the muse CLI globally, then check and preview a starter script.">
           <CodeBlock
             :code="installSample"
             caption="shell"
@@ -109,7 +109,7 @@
 
 <script client>
 export default class IndexPage {
-    installSample = "npm install -g @muse/muse\nmuse init demo && cd demo && muse check main.muse";
+    installSample = "npm install -g @muse-gpt/muse\nmuse doctor\nmuse init demo && cd demo && muse check main.muse";
 
     async copyInstall() {
         const text = String(this.installSample || "");

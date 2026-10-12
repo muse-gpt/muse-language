@@ -21,7 +21,7 @@ export function resolveNativeMuse(): string | null {
     const candidates: string[] = [];
 
     try {
-        const pkgRoot = dirname(require.resolve(`@muse/muse-${platformShort()}/package.json`));
+        const pkgRoot = dirname(require.resolve(`@muse-gpt/muse-${platformShort()}/package.json`));
         candidates.push(join(pkgRoot, "lib", exe));
     } catch {
         /* optional dep missing */

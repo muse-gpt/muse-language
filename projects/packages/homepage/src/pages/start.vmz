@@ -14,16 +14,21 @@
       <p class="muse-page__lede">A small path from an empty folder to a validated render plan.</p>
       <ol class="muse-page__steps">
         <li>
+          <strong>Install the CLI</strong>
+          <CodeBlock :code="stepInstall" caption="shell" />
+        </li>
+        <li>
           <strong>Initialize a project</strong>
           <CodeBlock :code="stepInit" caption="shell" />
         </li>
         <li>
           <strong>Describe intent, then orchestrate</strong>
-          <p>Write the feeling and references before locking implementation details.</p>
+          <p>Write the feeling and references before locking implementation details. Prefer <code>orchestrate</code> for cross-cutting maps; <code>directing</code> remains a compatibility alias.</p>
         </li>
         <li>
           <strong>Check and preview</strong>
           <CodeBlock :code="stepCheck" caption="shell" />
+          <p>Preview writes low-resolution PNG frames, a WAV guide track, and a manifest — not a finished container.</p>
         </li>
       </ol>
     </main>
@@ -78,6 +83,7 @@
 
 <script client>
 export default class StartPage {
+    stepInstall = "npm install -g @muse-gpt/muse\nmuse doctor";
     stepInit = "muse init demo\ncd demo";
     stepCheck = "muse check main.muse\nmuse preview main.muse";
 }
