@@ -563,7 +563,7 @@ fn parse_timeline_body(body: &str, span: Span) -> (Vec<ActDecl>, Vec<ShotDecl>) 
     (acts, shots)
 }
 
-/// `shot id : start..end scene name [for act]` starting at `words[0]`.
+/// `shot id : start..end scene name [for act] [cut|xfade|flash [bars]]` starting at `words[0]`.
 fn parse_shot_at(words: &[&str], span: Span) -> Option<(ShotDecl, usize)> {
     if words.len() < 6 || words[0] != "shot" || words[2] != ":" || words[4] != "scene" {
         return None;
@@ -575,11 +575,45 @@ fn parse_shot_at(words: &[&str], span: Span) -> Option<(ShotDecl, usize)> {
     if scene.is_empty() {
         return None;
     }
-    let (target, consumed) = if words.len() >= 8 && words[6] == "for" {
-        (Some(words[7].to_owned()), 8)
+    let mut index = 6;
+    let target = if words.len() >= 8 && words[6] == "for" {
+        index = 8;
+        Some(words[7].to_owned())
     } else {
-        (None, 6)
+        None
     };
+    let mut transition = "cut".to_owned();
+    let mut transition_bars = "0".to_owned();
+    if index < words.len() {
+        match words[index] {
+            "cut" => {
+                index += 1;
+            }
+            kind @ ("xfade" | "flash") => {
+                transition = kind.to_owned();
+                index += 1;
+                if index < words.len() {
+                    if words[index].parse::<f32>().is_ok() {
+                        transition_bars = words[index].to_owned();
+                        index += 1;
+                    } else {
+                        transition_bars = if kind == "flash" {
+                            "0.25".into()
+                        } else {
+                            "0.5".into()
+                        };
+                    }
+                } else {
+                    transition_bars = if kind == "flash" {
+                        "0.25".into()
+                    } else {
+                        "0.5".into()
+                    };
+                }
+            }
+            _ => {}
+        }
+    }
     Some((
         ShotDecl {
             id: words[1].to_owned(),
@@ -587,9 +621,11 @@ fn parse_shot_at(words: &[&str], span: Span) -> Option<(ShotDecl, usize)> {
             end_bar,
             scene,
             target,
+            transition,
+            transition_bars,
             span,
         },
-        consumed,
+        index,
     ))
 }
 

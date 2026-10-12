@@ -64,7 +64,7 @@ pub struct ActDecl {
     pub span: Span,
 }
 
-/// Timed cut inside a timeline: `shot s01 : 0..4 scene ember [for main]`.
+/// Timed cut inside a timeline: `shot s01 : 0..4 scene ember [for main] [xfade|flash|cut bars]`.
 #[derive(Debug, Clone, Serialize)]
 pub struct ShotDecl {
     pub id: String,
@@ -72,6 +72,10 @@ pub struct ShotDecl {
     pub end_bar: u32,
     pub scene: String,
     pub target: Option<String>,
+    /// Incoming transition kind (`cut`, `xfade`, `flash`).
+    pub transition: String,
+    /// Transition length in bars (0 = instantaneous cut).
+    pub transition_bars: String,
     pub span: Span,
 }
 

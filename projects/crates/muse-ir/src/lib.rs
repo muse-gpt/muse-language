@@ -15,7 +15,26 @@ pub struct Act {
     pub start_bar: u32,
     pub end_bar: u32,
 }
-/// Timed cut in the render plan (`shot id : bars scene name`).
+/// Incoming transition at a shot boundary.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ShotTransition {
+    Cut,
+    Xfade,
+    Flash,
+}
+
+impl ShotTransition {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Cut => "cut",
+            Self::Xfade => "xfade",
+            Self::Flash => "flash",
+        }
+    }
+}
+
+/// Timed cut in the render plan (`shot id : bars scene name [xfade bars]`).
 #[derive(Debug, Clone, Serialize)]
 pub struct Shot {
     pub id: String,
@@ -23,6 +42,9 @@ pub struct Shot {
     pub end_bar: u32,
     pub scene: String,
     pub target: Option<String>,
+    pub transition: ShotTransition,
+    /// Transition length in bars (incoming from the previous shot).
+    pub transition_bars: f32,
 }
 #[derive(Debug, Clone, Serialize)]
 pub struct Asset {
@@ -162,12 +184,46 @@ pub fn compile(source: &str, settings: RenderSettings) -> Compilation {
                                     shot.span,
                                 ));
                             }
+                            let transition = match shot.transition.trim().to_ascii_lowercase().as_str()
+                            {
+                                "cut" | "" => ShotTransition::Cut,
+                                "xfade" => ShotTransition::Xfade,
+                                "flash" => ShotTransition::Flash,
+                                other => {
+                                    diagnostics.push(Diagnostic::error(
+                                        format!(
+                                            "unknown shot transition `{other}` (cut|xfade|flash)"
+                                        ),
+                                        shot.span,
+                                    ));
+                                    ShotTransition::Cut
+                                }
+                            };
+                            let transition_bars = match shot.transition_bars.trim().parse::<f32>() {
+                                Ok(value) if value >= 0.0 => value,
+                                Ok(_) => {
+                                    diagnostics.push(Diagnostic::error(
+                                        "transition bars must be non-negative",
+                                        shot.span,
+                                    ));
+                                    0.0
+                                }
+                                Err(_) => {
+                                    diagnostics.push(Diagnostic::error(
+                                        "transition bars must be a number",
+                                        shot.span,
+                                    ));
+                                    0.0
+                                }
+                            };
                             shots.push(Shot {
                                 id: shot.id.clone(),
                                 start_bar: shot.start_bar,
                                 end_bar: shot.end_bar,
                                 scene: shot.scene.clone(),
                                 target: shot.target.clone(),
+                                transition,
+                                transition_bars,
                             });
                         }
                     }
@@ -461,6 +517,60 @@ impl RenderPlan {
         let span = f64::from(shot.end_bar - shot.start_bar);
         (((bar - f64::from(shot.start_bar)) / span) as f32).clamp(0.0, 1.0)
     }
+
+    /// Absolute bar position for normalized `t`.
+    pub fn bar_at_normalized(&self, t: f32) -> f32 {
+        let end = self.end_bar();
+        if end == 0 {
+            return 0.0;
+        }
+        (t.clamp(0.0, 1.0) as f64 * f64::from(end)) as f32
+    }
+
+    /// Incoming transition state at `t`, if an xfade/flash window is active.
+    pub fn transition_at_normalized(&self, t: f32) -> Option<TransitionState> {
+        let shot = self.shot_at_normalized(t)?;
+        if matches!(shot.transition, ShotTransition::Cut) || shot.transition_bars <= 0.0 {
+            return None;
+        }
+        let end = self.end_bar();
+        if end == 0 {
+            return None;
+        }
+        let bar = self.bar_at_normalized(t);
+        let start = shot.start_bar as f32;
+        let fade_end = start + shot.transition_bars;
+        if bar < start || bar >= fade_end {
+            return None;
+        }
+        let mix = ((bar - start) / shot.transition_bars).clamp(0.0, 1.0);
+        let prev_bar = (start - 0.001).max(0.0);
+        let from_t = (prev_bar / end as f32).clamp(0.0, 1.0);
+        let flash = if matches!(shot.transition, ShotTransition::Flash) {
+            // Peak at the cut, fall off across the flash window.
+            (1.0 - mix).powi(2)
+        } else {
+            0.0
+        };
+        Some(TransitionState {
+            kind: shot.transition,
+            mix,
+            from_t,
+            flash,
+        })
+    }
+}
+
+/// Active incoming transition sample for compositors.
+#[derive(Debug, Clone, Copy)]
+pub struct TransitionState {
+    pub kind: ShotTransition,
+    /// 0 = fully previous look, 1 = fully current shot.
+    pub mix: f32,
+    /// Normalized time used to sample the previous shot look.
+    pub from_t: f32,
+    /// Extra white flash amount in `[0, 1]` (flash transitions).
+    pub flash: f32,
 }
 
 #[cfg(test)]
@@ -570,7 +680,7 @@ mod tests {
     #[test]
     fn captures_timeline_shots() {
         let c = compile(
-            "timeline { act main : 0..16 shot s01 : 0..4 scene ember shot s02 : 4..8 scene illust for main }",
+            "timeline { act main : 0..16 shot s01 : 0..4 scene ember shot s02 : 4..8 scene illust for main xfade 0.5 }",
             RenderSettings::default(),
         );
         let plan = c.plan.expect("valid shots");
@@ -578,7 +688,13 @@ mod tests {
         assert_eq!(plan.shots[0].id, "s01");
         assert_eq!(plan.shots[0].scene, "ember");
         assert_eq!((plan.shots[0].start_bar, plan.shots[0].end_bar), (0, 4));
+        assert_eq!(plan.shots[0].transition, ShotTransition::Cut);
         assert_eq!(plan.shots[1].target.as_deref(), Some("main"));
+        assert_eq!(plan.shots[1].transition, ShotTransition::Xfade);
+        assert_eq!(plan.shots[1].transition_bars, 0.5);
+        let edge = 4.1 / 16.0;
+        let tr = plan.transition_at_normalized(edge as f32).expect("xfade");
+        assert!(tr.mix > 0.0 && tr.mix < 1.0);
     }
 
     #[test]

@@ -20,6 +20,8 @@ pub struct IrShot {
     pub end_bar: u32,
     pub scene: String,
     pub target: Option<String>,
+    pub transition: String,
+    pub transition_bars: f32,
 }
 #[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct IrAsset {
@@ -81,6 +83,8 @@ impl From<&Shot> for IrShot {
             end_bar: value.end_bar,
             scene: value.scene.clone(),
             target: value.target.clone(),
+            transition: value.transition.as_str().into(),
+            transition_bars: value.transition_bars,
         }
     }
 }
