@@ -5,13 +5,24 @@ use serde::Serialize;
 use std::collections::BTreeSet;
 
 mod schema;
-pub use schema::{CompilationDocument, IrAct, IrAsset, IrOrchestrationRule, compilation_schema};
+pub use schema::{
+    CompilationDocument, IrAct, IrAsset, IrOrchestrationRule, IrShot, compilation_schema,
+};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Act {
     pub name: String,
     pub start_bar: u32,
     pub end_bar: u32,
+}
+/// Timed cut in the render plan (`shot id : bars scene name`).
+#[derive(Debug, Clone, Serialize)]
+pub struct Shot {
+    pub id: String,
+    pub start_bar: u32,
+    pub end_bar: u32,
+    pub scene: String,
+    pub target: Option<String>,
 }
 #[derive(Debug, Clone, Serialize)]
 pub struct Asset {
@@ -49,6 +60,7 @@ pub struct RenderPlan {
     pub settings: RenderSettings,
     pub duration_seconds: f64,
     pub acts: Vec<Act>,
+    pub shots: Vec<Shot>,
     pub assets: Vec<Asset>,
     pub visual_layers: usize,
     pub visuals: Vec<VisualLayer>,
@@ -75,6 +87,8 @@ pub fn compile(source: &str, settings: RenderSettings) -> Compilation {
     let parsed = parse(source);
     let mut diagnostics = parsed.diagnostics;
     let mut acts = Vec::new();
+    let mut shots = Vec::new();
+    let mut shot_ids = BTreeSet::new();
     let mut assets = Vec::new();
     let mut names = BTreeSet::new();
     let mut bpm = 120.0;
@@ -98,7 +112,11 @@ pub fn compile(source: &str, settings: RenderSettings) -> Compilation {
                     }
                 }
                 BlockKind::Timeline => {
-                    if let BlockContent::Timeline { acts: declarations } = &block.content {
+                    if let BlockContent::Timeline {
+                        acts: declarations,
+                        shots: shot_decls,
+                    } = &block.content
+                    {
                         for act in declarations {
                             if act.start_bar < act.end_bar {
                                 acts.push(Act {
@@ -107,8 +125,42 @@ pub fn compile(source: &str, settings: RenderSettings) -> Compilation {
                                     end_bar: act.end_bar,
                                 });
                             } else {
-                                diagnostics.push(Diagnostic::error("act range must be increasing integers", act.span));
+                                diagnostics.push(Diagnostic::error(
+                                    "act range must be increasing integers",
+                                    act.span,
+                                ));
                             }
+                        }
+                        for shot in shot_decls {
+                            if shot.start_bar >= shot.end_bar {
+                                diagnostics.push(Diagnostic::error(
+                                    "shot range must be increasing integers",
+                                    shot.span,
+                                ));
+                                continue;
+                            }
+                            if !shot_ids.insert(shot.id.clone()) {
+                                diagnostics.push(Diagnostic::error(
+                                    format!("duplicate shot id `{}`", shot.id),
+                                    shot.span,
+                                ));
+                                continue;
+                            }
+                            if let Some(target) = &shot.target
+                                && !acts.iter().any(|act| act.name == *target)
+                            {
+                                diagnostics.push(Diagnostic::error(
+                                    format!("unknown shot target `{target}`"),
+                                    shot.span,
+                                ));
+                            }
+                            shots.push(Shot {
+                                id: shot.id.clone(),
+                                start_bar: shot.start_bar,
+                                end_bar: shot.end_bar,
+                                scene: shot.scene.clone(),
+                                target: shot.target.clone(),
+                            });
                         }
                     }
                 }
@@ -274,6 +326,7 @@ pub fn compile(source: &str, settings: RenderSettings) -> Compilation {
         settings,
         duration_seconds: duration,
         acts,
+        shots,
         assets,
         visual_layers: visuals,
         visuals: visual_layers,
@@ -372,5 +425,28 @@ mod tests {
         let plan = c.plan.expect("valid visual");
         assert_eq!(plan.visuals[0].lut.as_deref(), Some("P2"));
         assert_eq!(plan.visuals[0].lut_mix, Some(0.25));
+    }
+
+    #[test]
+    fn captures_timeline_shots() {
+        let c = compile(
+            "timeline { act main : 0..16 shot s01 : 0..4 scene ember shot s02 : 4..8 scene illust for main }",
+            RenderSettings::default(),
+        );
+        let plan = c.plan.expect("valid shots");
+        assert_eq!(plan.shots.len(), 2);
+        assert_eq!(plan.shots[0].id, "s01");
+        assert_eq!(plan.shots[0].scene, "ember");
+        assert_eq!((plan.shots[0].start_bar, plan.shots[0].end_bar), (0, 4));
+        assert_eq!(plan.shots[1].target.as_deref(), Some("main"));
+    }
+
+    #[test]
+    fn rejects_duplicate_shot_ids() {
+        let c = compile(
+            "timeline { act main : 0..8 shot s01 : 0..2 scene a shot s01 : 2..4 scene b }",
+            RenderSettings::default(),
+        );
+        assert!(!c.is_success());
     }
 }

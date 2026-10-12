@@ -2,7 +2,7 @@
 //!
 //! These DTOs intentionally do not expose parser AST nodes. They are the
 //! versioned contract consumed by CLI `--emit json` and MCP clients.
-use crate::{Act, Asset, OrchestrationRule, RenderPlan, VisualLayer};
+use crate::{Act, Asset, OrchestrationRule, RenderPlan, Shot, VisualLayer};
 use muse_types::RenderSettings;
 use schemars::JsonSchema;
 use serde::Serialize;
@@ -12,6 +12,14 @@ pub struct IrAct {
     pub name: String,
     pub start_bar: u32,
     pub end_bar: u32,
+}
+#[derive(Debug, Clone, Serialize, JsonSchema)]
+pub struct IrShot {
+    pub id: String,
+    pub start_bar: u32,
+    pub end_bar: u32,
+    pub scene: String,
+    pub target: Option<String>,
 }
 #[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct IrAsset {
@@ -43,6 +51,7 @@ pub struct CompilationDocument {
     pub settings: RenderSettings,
     pub duration_seconds: f64,
     pub acts: Vec<IrAct>,
+    pub shots: Vec<IrShot>,
     pub assets: Vec<IrAsset>,
     pub visual_layers: usize,
     pub visuals: Vec<IrVisualLayer>,
@@ -57,6 +66,17 @@ impl From<&Act> for IrAct {
             name: value.name.clone(),
             start_bar: value.start_bar,
             end_bar: value.end_bar,
+        }
+    }
+}
+impl From<&Shot> for IrShot {
+    fn from(value: &Shot) -> Self {
+        Self {
+            id: value.id.clone(),
+            start_bar: value.start_bar,
+            end_bar: value.end_bar,
+            scene: value.scene.clone(),
+            target: value.target.clone(),
         }
     }
 }
@@ -100,6 +120,7 @@ impl From<&RenderPlan> for CompilationDocument {
             settings: value.settings.clone(),
             duration_seconds: value.duration_seconds,
             acts: value.acts.iter().map(Into::into).collect(),
+            shots: value.shots.iter().map(Into::into).collect(),
             assets: value.assets.iter().map(Into::into).collect(),
             visual_layers: value.visual_layers,
             visuals: value.visuals.iter().map(Into::into).collect(),

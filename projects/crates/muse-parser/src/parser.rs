@@ -4,6 +4,7 @@ use muse_types::{Diagnostic, Span};
 use crate::{
     ast::{
         ActDecl, Block, BlockContent, BlockKind, Declaration, EmotionDecl, MappingDecl, MeterDecl, MusicDecl,
+        ShotDecl,
         OrchestrationDecl, Script, TempoDecl, VisualAssetKind, VisualDecl,
     },
     diagnostics::from_chumsky,
@@ -278,25 +279,10 @@ fn parse_block(
 
 fn typed_content(source: &str, kind: BlockKind, body: &str, body_span: Span) -> BlockContent {
     match kind {
-        BlockKind::Timeline => BlockContent::Timeline {
-            acts: body
-                .lines()
-                .filter_map(|line| {
-                    let words: Vec<_> = line.split_whitespace().collect();
-                    if words.len() >= 4 && words[0] == "act" && words[2] == ":" {
-                        let (start_bar, end_bar) = words[3].split_once("..")?;
-                        Some(ActDecl {
-                            name: words[1].to_owned(),
-                            start_bar: start_bar.parse().ok()?,
-                            end_bar: end_bar.parse().ok()?,
-                            span: body_span,
-                        })
-                    } else {
-                        None
-                    }
-                })
-                .collect(),
-        },
+        BlockKind::Timeline => {
+            let (acts, shots) = parse_timeline_body(body, body_span);
+            BlockContent::Timeline { acts, shots }
+        }
         BlockKind::Tempo => BlockContent::Tempo {
             events: body
                 .lines()
@@ -501,6 +487,71 @@ fn parse_visual_elements(body: &str, body_span: Span) -> Vec<VisualDecl> {
     elements
 }
 
+/// Scan timeline body tokens so `act` / `shot` may share a line.
+fn parse_timeline_body(body: &str, span: Span) -> (Vec<ActDecl>, Vec<ShotDecl>) {
+    let words: Vec<_> = body.split_whitespace().collect();
+    let mut acts = Vec::new();
+    let mut shots = Vec::new();
+    let mut index = 0usize;
+    while index < words.len() {
+        if words[index] == "act" && index + 3 < words.len() && words[index + 2] == ":" {
+            if let Some((start_bar, end_bar)) = words[index + 3].split_once("..") {
+                if let (Ok(start_bar), Ok(end_bar)) =
+                    (start_bar.parse::<u32>(), end_bar.parse::<u32>())
+                {
+                    acts.push(ActDecl {
+                        name: words[index + 1].to_owned(),
+                        start_bar,
+                        end_bar,
+                        span,
+                    });
+                    index += 4;
+                    continue;
+                }
+            }
+        }
+        if words[index] == "shot" {
+            if let Some((shot, consumed)) = parse_shot_at(&words[index..], span) {
+                shots.push(shot);
+                index += consumed;
+                continue;
+            }
+        }
+        index += 1;
+    }
+    (acts, shots)
+}
+
+/// `shot id : start..end scene name [for act]` starting at `words[0]`.
+fn parse_shot_at(words: &[&str], span: Span) -> Option<(ShotDecl, usize)> {
+    if words.len() < 6 || words[0] != "shot" || words[2] != ":" || words[4] != "scene" {
+        return None;
+    }
+    let (start_bar, end_bar) = words[3].split_once("..")?;
+    let start_bar = start_bar.parse().ok()?;
+    let end_bar = end_bar.parse().ok()?;
+    let scene = words[5].trim_matches('"').to_owned();
+    if scene.is_empty() {
+        return None;
+    }
+    let (target, consumed) = if words.len() >= 8 && words[6] == "for" {
+        (Some(words[7].to_owned()), 8)
+    } else {
+        (None, 6)
+    };
+    Some((
+        ShotDecl {
+            id: words[1].to_owned(),
+            start_bar,
+            end_bar,
+            scene,
+            target,
+            span,
+        },
+        consumed,
+    ))
+}
+
 fn take_visual_value(input: &str) -> (String, &str) {
     let input = input.trim_start();
     if let Some(rest) = input.strip_prefix('"') {
@@ -639,11 +690,12 @@ mod tests {
         let Declaration::Block(timeline) = &result.script.declarations[0] else {
             panic!("expected timeline block")
         };
-        let BlockContent::Timeline { acts } = &timeline.content else {
+        let BlockContent::Timeline { acts, shots } = &timeline.content else {
             panic!("expected typed timeline content")
         };
         assert_eq!(acts[0].name, "intro");
         assert_eq!((acts[0].start_bar, acts[0].end_bar), (0, 8));
+        assert!(shots.is_empty());
 
         let Declaration::Block(tempo) = &result.script.declarations[1] else {
             panic!("expected tempo block")
@@ -652,6 +704,28 @@ mod tests {
             panic!("expected typed tempo content")
         };
         assert_eq!(events[0].bpm, 132.0);
+    }
+
+    #[test]
+    fn lowers_timeline_shots() {
+        let result = parse(
+            "timeline { act main : 0..16 shot s01 : 0..4 scene ember shot s02 : 4..8 scene illust for main }",
+        );
+        assert!(result.diagnostics.is_empty());
+        let Declaration::Block(timeline) = &result.script.declarations[0] else {
+            panic!("expected timeline block")
+        };
+        let BlockContent::Timeline { shots, .. } = &timeline.content else {
+            panic!("expected typed timeline content")
+        };
+        assert_eq!(shots.len(), 2);
+        assert_eq!(shots[0].id, "s01");
+        assert_eq!((shots[0].start_bar, shots[0].end_bar), (0, 4));
+        assert_eq!(shots[0].scene, "ember");
+        assert_eq!(shots[0].target, None);
+        assert_eq!(shots[1].id, "s02");
+        assert_eq!(shots[1].scene, "illust");
+        assert_eq!(shots[1].target.as_deref(), Some("main"));
     }
 
     #[test]

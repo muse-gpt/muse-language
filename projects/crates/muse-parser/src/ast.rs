@@ -43,7 +43,10 @@ pub struct Block {
 #[derive(Debug, Clone, Serialize)]
 pub enum BlockContent {
     Raw,
-    Timeline { acts: Vec<ActDecl> },
+    Timeline {
+        acts: Vec<ActDecl>,
+        shots: Vec<ShotDecl>,
+    },
     Tempo { events: Vec<TempoDecl> },
     Intent { emotions: Vec<EmotionDecl> },
     Orchestrate(OrchestrationDecl),
@@ -56,6 +59,17 @@ pub struct ActDecl {
     pub name: String,
     pub start_bar: u32,
     pub end_bar: u32,
+    pub span: Span,
+}
+
+/// Timed cut inside a timeline: `shot s01 : 0..4 scene ember [for main]`.
+#[derive(Debug, Clone, Serialize)]
+pub struct ShotDecl {
+    pub id: String,
+    pub start_bar: u32,
+    pub end_bar: u32,
+    pub scene: String,
+    pub target: Option<String>,
     pub span: Span,
 }
 

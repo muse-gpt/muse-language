@@ -7,7 +7,7 @@ mod parser;
 
 pub use ast::{
     ActDecl, Block, BlockContent, BlockKind, Declaration, EmotionDecl, MappingDecl, MeterDecl, MusicDecl,
-    OrchestrationDecl, Script, TempoDecl, VisualAssetKind, VisualDecl,
+    OrchestrationDecl, Script, ShotDecl, TempoDecl, VisualAssetKind, VisualDecl,
 };
 pub use lexer::{Token, TokenKind, lex};
 pub use parser::{ParseOutput, parse};
