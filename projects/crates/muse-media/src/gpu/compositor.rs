@@ -257,6 +257,7 @@ impl GpuCompositor {
         let mut lut_name: Option<String> = None;
         let mut lut_mix = 0.0_f32;
         let mut pulse_strength = 0.0_f32;
+        let mut stamp_strength = 0.0_f32;
         let mut image_draws: Vec<(RgbaImage, CoverUv)> = Vec::new();
 
         for layer in layers {
@@ -274,6 +275,9 @@ impl GpuCompositor {
             }
             if let Some(strength) = layer.pulse {
                 pulse_strength = strength.clamp(0.0, 1.0);
+            }
+            if let Some(strength) = layer.stamp {
+                stamp_strength = strength.clamp(0.0, 1.0);
             }
             if let Some(name) = layer.lut.as_ref() {
                 lut_name = Some(name.clone());
@@ -351,6 +355,7 @@ impl GpuCompositor {
             || bloom_strength > 0.0
             || lut_mix > 0.0
             || pulse_strength > 0.0
+            || stamp_strength > 0.0
         {
             let lut_img = match (&lut_name, lut_mix > 0.0) {
                 (Some(name), true) => crate::lut::resolve_lut(name, &options.asset_root)?,
@@ -382,7 +387,7 @@ impl GpuCompositor {
                 lut_mix: if lut_name.is_some() { lut_mix } else { 0.0 },
                 pulse: pulse_strength,
                 shot_progress: options.shot_progress.clamp(0.0, 1.0),
-                _pad: 0.0,
+                stamp: stamp_strength,
             };
             let uniform_buf = self.device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("muse-post-uniform"),
@@ -637,7 +642,7 @@ struct PostUniforms {
     lut_mix: f32,
     pulse: f32,
     shot_progress: f32,
-    _pad: f32,
+    stamp: f32,
 }
 
 #[derive(Clone, Copy)]
@@ -752,7 +757,7 @@ struct Post {
     lut_mix: f32,
     pulse: f32,
     shot_progress: f32,
-    _pad: f32,
+    stamp: f32,
 };
 
 @group(0) @binding(0) var src_tex: texture_2d<f32>;
@@ -827,11 +832,24 @@ fn pulse_glow(uv: vec2<f32>) -> vec3<f32> {
     return vec3<f32>(1.0, 0.72, 0.35) * glow;
 }
 
+fn stamp_block(uv: vec2<f32>) -> vec3<f32> {
+    let slam = smoothstep(0.0, 0.22, post.shot_progress);
+    let scale = 2.4 - 1.4 * slam;
+    let opacity = post.stamp * slam * (0.75 + 0.25 * abs(sin(post.shot_progress * 3.14159265)));
+    let p = (uv - vec2<f32>(0.5, 0.5)) * scale;
+    let d = max(abs(p.x), abs(p.y));
+    let outer = smoothstep(0.22, 0.18, d) * smoothstep(0.12, 0.14, d);
+    let inner = smoothstep(0.10, 0.06, d);
+    let mask = clamp(outer * 0.85 + inner * 0.55, 0.0, 1.0) * opacity;
+    return vec3<f32>(0.98, 0.82, 0.55) * mask;
+}
+
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     var color = textureSample(src_tex, src_samp, in.uv).rgb;
     color = grade_lut(color);
     color += pulse_glow(in.uv);
+    color += stamp_block(in.uv);
     color += soft_bloom(in.uv) * post.bloom * 2.5;
     let d = distance(in.uv, vec2<f32>(0.5, 0.5)) * 1.41421356;
     let edge = smoothstep(0.25, 0.95, d);

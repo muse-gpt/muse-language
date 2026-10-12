@@ -102,6 +102,9 @@ fn compose_frame_cpu(
     if let Some(strength) = layers_pulse(&layers) {
         apply_pulse_rgb(&mut canvas, strength, plan.shot_progress_normalized(t));
     }
+    if let Some(strength) = layers_stamp(&layers) {
+        apply_stamp_rgb(&mut canvas, strength, plan.shot_progress_normalized(t));
+    }
     if let Some(strength) = layers_bloom(&layers) {
         apply_bloom_rgb(&mut canvas, strength);
     }
@@ -245,6 +248,10 @@ fn layers_pulse(layers: &[&muse_ir::VisualLayer]) -> Option<f32> {
     layers.iter().rev().find_map(|layer| layer.pulse)
 }
 
+fn layers_stamp(layers: &[&muse_ir::VisualLayer]) -> Option<f32> {
+    layers.iter().rev().find_map(|layer| layer.stamp)
+}
+
 fn layers_bloom(layers: &[&muse_ir::VisualLayer]) -> Option<f32> {
     layers.iter().rev().find_map(|layer| layer.bloom)
 }
@@ -282,6 +289,50 @@ fn apply_pulse_rgb(canvas: &mut RgbImage, strength: f32, shot_progress: f32) {
             p[2] = ((p[2] as f32 / 255.0 + glow * 0.35).clamp(0.0, 1.0) * 255.0).round() as u8;
         }
     }
+}
+
+/// Geometric stamp/slam block (placeholder for kanji FX; not a lyric layer).
+fn apply_stamp_rgb(canvas: &mut RgbImage, strength: f32, shot_progress: f32) {
+    let strength = strength.clamp(0.0, 1.0);
+    if strength <= 0.0 {
+        return;
+    }
+    let slam = smoothstep(0.0, 0.22, shot_progress);
+    let scale = 2.4 - 1.4 * slam;
+    let opacity = strength * slam * (0.75 + 0.25 * (shot_progress * std::f32::consts::PI).sin().abs());
+    if opacity <= 0.0 {
+        return;
+    }
+    let width = canvas.width();
+    let height = canvas.height();
+    let aspect = width as f32 / height as f32;
+    for y in 0..height {
+        for x in 0..width {
+            let u = ((x as f32 + 0.5) / width as f32 - 0.5) * aspect;
+            let v = (y as f32 + 0.5) / height as f32 - 0.5;
+            let px = u * scale;
+            let py = v * scale;
+            let d = px.abs().max(py.abs());
+            let outer = smoothstep(0.22, 0.18, d) * smoothstep(0.12, 0.14, d);
+            let inner = smoothstep(0.10, 0.06, d);
+            let mask = (outer * 0.85 + inner * 0.55).clamp(0.0, 1.0) * opacity;
+            if mask <= 0.0 {
+                continue;
+            }
+            let p = canvas.get_pixel_mut(x, y);
+            p[0] = ((p[0] as f32 / 255.0 * (1.0 - mask) + 0.98 * mask).clamp(0.0, 1.0) * 255.0)
+                .round() as u8;
+            p[1] = ((p[1] as f32 / 255.0 * (1.0 - mask) + 0.82 * mask).clamp(0.0, 1.0) * 255.0)
+                .round() as u8;
+            p[2] = ((p[2] as f32 / 255.0 * (1.0 - mask) + 0.55 * mask).clamp(0.0, 1.0) * 255.0)
+                .round() as u8;
+        }
+    }
+}
+
+fn smoothstep(edge0: f32, edge1: f32, x: f32) -> f32 {
+    let t = ((x - edge0) / (edge1 - edge0)).clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
 }
 
 /// Soft highlight bloom matching the GPU 5×5 threshold blur.
