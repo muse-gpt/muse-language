@@ -118,6 +118,11 @@ pub enum VisualDecl {
         strength: String,
         span: Span,
     },
+    /// Soft bloom; strength in `[0, 1]` (reference default ≈ 0.3).
+    Bloom {
+        strength: String,
+        span: Span,
+    },
 }
 
 #[derive(Debug, Clone, Serialize)]

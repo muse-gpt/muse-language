@@ -37,6 +37,8 @@ pub struct VisualLayer {
     pub vignette: Option<f32>,
     /// Optional film grain strength in `[0, 1]`.
     pub grain: Option<f32>,
+    /// Optional soft bloom strength in `[0, 1]`.
+    pub bloom: Option<f32>,
 }
 #[derive(Debug, Clone, Serialize)]
 pub struct RenderPlan {
@@ -138,6 +140,7 @@ pub fn compile(source: &str, settings: RenderSettings) -> Compilation {
                     let mut images = Vec::new();
                     let mut vignette = None;
                     let mut grain = None;
+                    let mut bloom = None;
                     if let BlockContent::Visual { elements } = &block.content {
                         visuals += elements.len().max(1);
                         for element in elements {
@@ -166,6 +169,13 @@ pub fn compile(source: &str, settings: RenderSettings) -> Compilation {
                                             .push(Diagnostic::error(format!("grain {message}"), *span)),
                                     }
                                 }
+                                VisualDecl::Bloom { strength, span } => {
+                                    match parse_unit_strength(strength) {
+                                        Ok(value) => bloom = Some(value),
+                                        Err(message) => diagnostics
+                                            .push(Diagnostic::error(format!("bloom {message}"), *span)),
+                                    }
+                                }
                                 _ => {}
                             }
                         }
@@ -186,6 +196,7 @@ pub fn compile(source: &str, settings: RenderSettings) -> Compilation {
                         images,
                         vignette,
                         grain,
+                        bloom,
                     });
                 }
                 BlockKind::Orchestrate => {
@@ -316,5 +327,15 @@ mod tests {
         );
         let plan = c.plan.expect("valid visual");
         assert_eq!(plan.visuals[0].grain, Some(0.06));
+    }
+
+    #[test]
+    fn captures_visual_bloom() {
+        let c = compile(
+            r##"timeline { act main : 0..4 } visual for main { background color "#0b1524" bloom 0.3 }"##,
+            RenderSettings::default(),
+        );
+        let plan = c.plan.expect("valid visual");
+        assert_eq!(plan.visuals[0].bloom, Some(0.3));
     }
 }
