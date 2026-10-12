@@ -84,10 +84,10 @@ fn compose_frame_cpu(
     options: &ComposeOptions,
     cache: &mut HashMap<String, RgbImage>,
 ) -> Result<RgbImage> {
-    let (r, g, b, _) = plan_background_rgb(plan);
+    let layers = plan.visuals_at_normalized(t);
+    let (r, g, b) = layers_background_rgb(&layers);
     let mut canvas = RgbImage::from_pixel(width, height, Rgb([r, g, b]));
-    let images: Vec<&str> = plan
-        .visuals
+    let images: Vec<&str> = layers
         .iter()
         .flat_map(|layer| layer.images.iter().map(String::as_str))
         .collect();
@@ -95,17 +95,17 @@ fn compose_frame_cpu(
         let plate = load_image(uri, options, cache)?;
         blit_cover(&mut canvas, &plate);
     }
-    if let Some((name, mix)) = plan_lut(plan) {
+    if let Some((name, mix)) = layers_lut(&layers) {
         let lut = crate::lut::resolve_lut(&name, &options.asset_root)?;
         crate::lut::apply_lut_rgb(&mut canvas, &lut, mix);
     }
-    if let Some(strength) = plan_bloom(plan) {
+    if let Some(strength) = layers_bloom(&layers) {
         apply_bloom_rgb(&mut canvas, strength);
     }
-    if let Some(strength) = plan_vignette(plan) {
+    if let Some(strength) = layers_vignette(&layers) {
         apply_vignette_rgb(&mut canvas, strength);
     }
-    if let Some(strength) = plan_grain(plan) {
+    if let Some(strength) = layers_grain(&layers) {
         apply_grain_rgb(&mut canvas, strength, t);
     }
     paint_progress_cue(&mut canvas, t);
@@ -128,8 +128,13 @@ fn compose_frame_gpu(
         Err(message) => bail!("{message}"),
     };
 
+    let layers: Vec<_> = plan
+        .visuals_at_normalized(t)
+        .into_iter()
+        .cloned()
+        .collect();
     let rgba = compositor.compose_layers(
-        &plan.visuals,
+        &layers,
         &GpuComposeOptions {
             width,
             height,
@@ -193,22 +198,51 @@ fn resolve_asset(uri: &str, root: &Path) -> PathBuf {
 
 /// Last declared vignette strength on the plan, if any.
 pub fn plan_vignette(plan: &RenderPlan) -> Option<f32> {
-    plan.visuals.iter().rev().find_map(|layer| layer.vignette)
+    layers_vignette(&plan.visuals.iter().collect::<Vec<_>>())
 }
 
 /// Last declared grain strength on the plan, if any.
 pub fn plan_grain(plan: &RenderPlan) -> Option<f32> {
-    plan.visuals.iter().rev().find_map(|layer| layer.grain)
+    layers_grain(&plan.visuals.iter().collect::<Vec<_>>())
 }
 
 /// Last declared bloom strength on the plan, if any.
 pub fn plan_bloom(plan: &RenderPlan) -> Option<f32> {
-    plan.visuals.iter().rev().find_map(|layer| layer.bloom)
+    layers_bloom(&plan.visuals.iter().collect::<Vec<_>>())
 }
 
 /// Last declared LUT name + mix on the plan, if any.
 pub fn plan_lut(plan: &RenderPlan) -> Option<(String, f32)> {
-    plan.visuals.iter().rev().find_map(|layer| {
+    layers_lut(&plan.visuals.iter().collect::<Vec<_>>())
+}
+
+fn layers_background_rgb(layers: &[&muse_ir::VisualLayer]) -> (u8, u8, u8) {
+    let color = layers
+        .iter()
+        .rev()
+        .find_map(|layer| layer.background_color.as_deref())
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    match color {
+        Some(raw) => parse_hex_color(raw).unwrap_or((11, 21, 36)),
+        None => (11, 21, 36),
+    }
+}
+
+fn layers_vignette(layers: &[&muse_ir::VisualLayer]) -> Option<f32> {
+    layers.iter().rev().find_map(|layer| layer.vignette)
+}
+
+fn layers_grain(layers: &[&muse_ir::VisualLayer]) -> Option<f32> {
+    layers.iter().rev().find_map(|layer| layer.grain)
+}
+
+fn layers_bloom(layers: &[&muse_ir::VisualLayer]) -> Option<f32> {
+    layers.iter().rev().find_map(|layer| layer.bloom)
+}
+
+fn layers_lut(layers: &[&muse_ir::VisualLayer]) -> Option<(String, f32)> {
+    layers.iter().rev().find_map(|layer| {
         let name = layer.lut.as_ref()?;
         let mix = layer.lut_mix.unwrap_or(1.0);
         Some((name.clone(), mix))

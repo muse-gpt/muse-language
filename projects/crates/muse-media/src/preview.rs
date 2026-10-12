@@ -43,6 +43,10 @@ pub struct PreviewManifest {
     pub audio_file: String,
     pub background_color: Option<String>,
     pub images: Vec<String>,
+    /// Shot ids declared on the plan (may be empty).
+    pub shots: Vec<String>,
+    /// Distinct shot ids encountered while rendering frames (normalized time).
+    pub active_shots: Vec<String>,
 }
 
 pub fn render_preview(plan: &RenderPlan, out: &Path, scale: f32) -> Result<PreviewManifest> {
@@ -69,8 +73,14 @@ pub fn render_preview_with(plan: &RenderPlan, out: &Path, options: PreviewOption
         asset_root: options.asset_root.clone(),
     };
     let mut cache = HashMap::new();
+    let mut active_shots = Vec::new();
     for index in 0..frames {
         let t = index as f32 / frames.saturating_sub(1).max(1) as f32;
+        if let Some(shot) = plan.shot_at_normalized(t) {
+            if !active_shots.iter().any(|id| id == &shot.id) {
+                active_shots.push(shot.id.clone());
+            }
+        }
         let image = compose_frame(plan, width, height, t, &compose, &mut cache)?;
         image.save(out.join(format!("frame-{index:04}.png")))?;
     }
@@ -85,6 +95,7 @@ pub fn render_preview_with(plan: &RenderPlan, out: &Path, options: PreviewOption
         .iter()
         .flat_map(|layer| layer.images.clone())
         .collect();
+    let shots = plan.shots.iter().map(|shot| shot.id.clone()).collect();
     let manifest = PreviewManifest {
         frames,
         width,
@@ -96,6 +107,8 @@ pub fn render_preview_with(plan: &RenderPlan, out: &Path, options: PreviewOption
         audio_file: "preview.wav".into(),
         background_color,
         images,
+        shots,
+        active_shots,
     };
     fs::write(out.join("manifest.json"), serde_json::to_vec_pretty(&manifest)?)?;
     Ok(manifest)
@@ -112,6 +125,10 @@ mod tests {
 
     #[test]
     fn fills_frames_with_declared_background() {
+        // Exact RGB asserts use the CPU path (GPU sRGB clear can round differently).
+        unsafe {
+            env::set_var("MUSE_COMPOSITOR", "cpu");
+        }
         let plan = muse_ir::compile(
             r##"timeline { act main : 0..1 } visual for main { background color "#0b1524" }"##,
             Default::default(),
@@ -126,6 +143,9 @@ mod tests {
         let png = image::open(out.join("frame-0000.png")).unwrap().to_rgb8();
         assert_eq!(*png.get_pixel(0, 0), Rgb([0x0b, 0x15, 0x24]));
         let _ = fs::remove_dir_all(root);
+        unsafe {
+            env::remove_var("MUSE_COMPOSITOR");
+        }
     }
 
     #[test]
