@@ -1,4 +1,4 @@
-//! wgpu frame compositor: clear + cover-blit image layers → RGBA8 readback.
+//! wgpu frame compositor: clear + cover-blit + optional vignette → RGBA8 readback.
 
 use anyhow::{Context, Result, bail};
 use image::RgbaImage;
@@ -15,9 +15,11 @@ pub struct GpuComposeOptions {
 pub struct GpuCompositor {
     device: wgpu::Device,
     queue: wgpu::Queue,
-    pipeline: wgpu::RenderPipeline,
+    blit_pipeline: wgpu::RenderPipeline,
+    vignette_pipeline: wgpu::RenderPipeline,
     sampler: wgpu::Sampler,
-    bind_group_layout: wgpu::BindGroupLayout,
+    blit_bgl: wgpu::BindGroupLayout,
+    vignette_bgl: wgpu::BindGroupLayout,
 }
 
 impl GpuCompositor {
@@ -86,7 +88,7 @@ impl GpuCompositor {
             push_constant_ranges: &[],
         });
 
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        let blit_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("muse-cover-blit-pipeline"),
             layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState {
@@ -115,6 +117,75 @@ impl GpuCompositor {
             cache: None,
         });
 
+        let vignette_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("muse-vignette"),
+            source: wgpu::ShaderSource::Wgsl(VIGNETTE_WGSL.into()),
+        });
+        let vignette_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("muse-vignette-bgl"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+            ],
+        });
+        let vignette_pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("muse-vignette-pl"),
+            bind_group_layouts: &[&vignette_bgl],
+            push_constant_ranges: &[],
+        });
+        let vignette_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("muse-vignette-pipeline"),
+            layout: Some(&vignette_pl),
+            vertex: wgpu::VertexState {
+                module: &vignette_shader,
+                entry_point: Some("vs_main"),
+                compilation_options: Default::default(),
+                buffers: &[],
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &vignette_shader,
+                entry_point: Some("fs_main"),
+                compilation_options: Default::default(),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                    blend: None,
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                ..Default::default()
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            multiview: None,
+            cache: None,
+        });
+
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("muse-linear-sampler"),
             mag_filter: wgpu::FilterMode::Linear,
@@ -125,9 +196,11 @@ impl GpuCompositor {
         Ok(Self {
             device,
             queue,
-            pipeline,
+            blit_pipeline,
+            vignette_pipeline,
             sampler,
-            bind_group_layout,
+            blit_bgl: bind_group_layout,
+            vignette_bgl,
         })
     }
 
@@ -151,7 +224,9 @@ impl GpuCompositor {
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::Rgba8UnormSrgb,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                | wgpu::TextureUsages::COPY_SRC
+                | wgpu::TextureUsages::TEXTURE_BINDING,
             view_formats: &[],
         });
         let target_view = target.create_view(&wgpu::TextureViewDescriptor::default());
@@ -162,11 +237,15 @@ impl GpuCompositor {
             b: 36.0 / 255.0,
             a: 1.0,
         };
+        let mut vignette_strength = 0.0_f32;
         let mut image_draws: Vec<(RgbaImage, CoverUv)> = Vec::new();
 
         for layer in layers {
             if let Some(hex) = layer.background_color.as_deref() {
                 clear = parse_hex_color(hex).unwrap_or(clear);
+            }
+            if let Some(strength) = layer.vignette {
+                vignette_strength = strength.clamp(0.0, 1.0);
             }
             for uri in &layer.images {
                 let path = resolve_asset(uri, &options.asset_root);
@@ -226,11 +305,80 @@ impl GpuCompositor {
                     timestamp_writes: None,
                     occlusion_query_set: None,
                 });
-                pass.set_pipeline(&self.pipeline);
+                pass.set_pipeline(&self.blit_pipeline);
                 pass.set_bind_group(0, &bind_group, &[]);
                 pass.draw(0..6, 0..1);
             }
             upload_keep.push((tex, uniform_buf, bind_group));
+        }
+
+        let mut post_keep: Option<(wgpu::Texture, wgpu::Buffer, wgpu::BindGroup)> = None;
+        if vignette_strength > 0.0 {
+            let post = self.device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("muse-frame-post"),
+                size: wgpu::Extent3d {
+                    width: options.width,
+                    height: options.height,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+                view_formats: &[],
+            });
+            let post_view = post.create_view(&wgpu::TextureViewDescriptor::default());
+            let uniforms = VignetteUniforms {
+                strength: vignette_strength,
+                _pad: [0.0; 3],
+            };
+            let uniform_buf = self.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("muse-vignette-uniform"),
+                size: std::mem::size_of::<VignetteUniforms>() as u64,
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+            self.queue
+                .write_buffer(&uniform_buf, 0, bytemuck::bytes_of(&uniforms));
+            let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("muse-vignette-bg"),
+                layout: &self.vignette_bgl,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(&target_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::Sampler(&self.sampler),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: uniform_buf.as_entire_binding(),
+                    },
+                ],
+            });
+            {
+                let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("muse-vignette-pass"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &post_view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                            store: wgpu::StoreOp::Store,
+                        },
+                    })],
+                    depth_stencil_attachment: None,
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                });
+                pass.set_pipeline(&self.vignette_pipeline);
+                pass.set_bind_group(0, &bind_group, &[]);
+                pass.draw(0..6, 0..1);
+            }
+            post_keep = Some((post, uniform_buf, bind_group));
         }
 
         let padded_bytes_per_row = align_256(options.width * 4);
@@ -241,9 +389,14 @@ impl GpuCompositor {
             mapped_at_creation: false,
         });
 
+        let copy_tex = post_keep
+            .as_ref()
+            .map(|(tex, _, _)| tex)
+            .unwrap_or(&target);
+
         encoder.copy_texture_to_buffer(
             wgpu::TexelCopyTextureInfo {
-                texture: &target,
+                texture: copy_tex,
                 mip_level: 0,
                 origin: wgpu::Origin3d::ZERO,
                 aspect: wgpu::TextureAspect::All,
@@ -265,6 +418,7 @@ impl GpuCompositor {
 
         self.queue.submit(Some(encoder.finish()));
         drop(upload_keep);
+        drop(post_keep);
 
         let slice = output_buffer.slice(..);
         let (tx, rx) = std::sync::mpsc::channel();
@@ -349,7 +503,7 @@ impl GpuCompositor {
 
         let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("muse-blit-bg"),
-            layout: &self.bind_group_layout,
+            layout: &self.blit_bgl,
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
@@ -377,6 +531,13 @@ struct CoverUniforms {
     uv_max: [f32; 2],
     /// WGSL uniform structs must be 16-byte aligned / sized.
     _pad: [f32; 4],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct VignetteUniforms {
+    strength: f32,
+    _pad: [f32; 3],
 }
 
 #[derive(Clone, Copy)]
@@ -479,5 +640,56 @@ fn vs_main(@builtin(vertex_index) idx: u32) -> VsOut {
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     return textureSample(src_tex, src_samp, in.uv);
+}
+"#;
+
+const VIGNETTE_WGSL: &str = r#"
+struct Vignette {
+    strength: f32,
+    _p0: f32,
+    _p1: f32,
+    _p2: f32,
+};
+
+@group(0) @binding(0) var src_tex: texture_2d<f32>;
+@group(0) @binding(1) var src_samp: sampler;
+@group(0) @binding(2) var<uniform> vig: Vignette;
+
+struct VsOut {
+    @builtin(position) pos: vec4<f32>,
+    @location(0) uv: vec2<f32>,
+};
+
+@vertex
+fn vs_main(@builtin(vertex_index) idx: u32) -> VsOut {
+    var positions = array<vec2<f32>, 6>(
+        vec2<f32>(-1.0, -1.0),
+        vec2<f32>( 1.0, -1.0),
+        vec2<f32>(-1.0,  1.0),
+        vec2<f32>(-1.0,  1.0),
+        vec2<f32>( 1.0, -1.0),
+        vec2<f32>( 1.0,  1.0),
+    );
+    var uvs = array<vec2<f32>, 6>(
+        vec2<f32>(0.0, 1.0),
+        vec2<f32>(1.0, 1.0),
+        vec2<f32>(0.0, 0.0),
+        vec2<f32>(0.0, 0.0),
+        vec2<f32>(1.0, 1.0),
+        vec2<f32>(1.0, 0.0),
+    );
+    var out: VsOut;
+    out.pos = vec4<f32>(positions[idx], 0.0, 1.0);
+    out.uv = uvs[idx];
+    return out;
+}
+
+@fragment
+fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
+    let color = textureSample(src_tex, src_samp, in.uv);
+    let d = distance(in.uv, vec2<f32>(0.5, 0.5)) * 1.41421356;
+    let edge = smoothstep(0.25, 0.95, d);
+    let factor = 1.0 - vig.strength * edge;
+    return vec4<f32>(color.rgb * factor, color.a);
 }
 "#;

@@ -95,6 +95,9 @@ fn compose_frame_cpu(
         let plate = load_image(uri, options, cache)?;
         blit_cover(&mut canvas, &plate);
     }
+    if let Some(strength) = plan_vignette(plan) {
+        apply_vignette_rgb(&mut canvas, strength);
+    }
     paint_progress_cue(&mut canvas, t);
     Ok(canvas)
 }
@@ -174,6 +177,35 @@ fn resolve_asset(uri: &str, root: &Path) -> PathBuf {
         path.to_path_buf()
     } else {
         root.join(path)
+    }
+}
+
+/// Last declared vignette strength on the plan, if any.
+pub fn plan_vignette(plan: &RenderPlan) -> Option<f32> {
+    plan.visuals.iter().rev().find_map(|layer| layer.vignette)
+}
+
+/// Radial edge darken matching the GPU vignette pass (`smoothstep(0.25, 0.95, d)`).
+fn apply_vignette_rgb(canvas: &mut RgbImage, strength: f32) {
+    let strength = strength.clamp(0.0, 1.0);
+    if strength <= 0.0 {
+        return;
+    }
+    let width = canvas.width();
+    let height = canvas.height();
+    for y in 0..height {
+        for x in 0..width {
+            let u = (x as f32 + 0.5) / width as f32;
+            let v = (y as f32 + 0.5) / height as f32;
+            let d = ((u - 0.5).hypot(v - 0.5)) * std::f32::consts::SQRT_2;
+            let t = ((d - 0.25) / 0.70).clamp(0.0, 1.0);
+            let edge = t * t * (3.0 - 2.0 * t);
+            let factor = 1.0 - strength * edge;
+            let p = canvas.get_pixel_mut(x, y);
+            p[0] = (p[0] as f32 * factor).round() as u8;
+            p[1] = (p[1] as f32 * factor).round() as u8;
+            p[2] = (p[2] as f32 * factor).round() as u8;
+        }
     }
 }
 
