@@ -4,14 +4,14 @@ import { defineConfig } from "@doki-land/nifty";
 export default defineConfig({
     publish: {
         packages: [
-            "@muse/muse-win32-x64",
-            "@muse/muse-darwin-arm64",
-            "@muse/muse-darwin-x64",
-            "@muse/muse-linux-x64",
-            "@muse/muse-linux-arm64",
-            "@muse/muse-unknown-wasm32",
-            "@muse/muse-skills",
-            "@muse/muse",
+            "@muse-gpt/muse-win32-x64",
+            "@muse-gpt/muse-darwin-arm64",
+            "@muse-gpt/muse-darwin-x64",
+            "@muse-gpt/muse-linux-x64",
+            "@muse-gpt/muse-linux-arm64",
+            "@muse-gpt/muse-unknown-wasm32",
+            "@muse-gpt/muse-skills",
+            "@muse-gpt/muse",
         ],
     },
 });
