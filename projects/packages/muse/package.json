@@ -1,5 +1,5 @@
 {
-    "name": "@muse/muse",
+    "name": "@muse-gpt/muse",
     "version": "0.0.0",
     "description": "Muse audiovisual composition language — CLI and Node entry",
     "type": "module",
@@ -31,11 +31,11 @@
         "jiti": "^2.4.2"
     },
     "optionalDependencies": {
-        "@muse/muse-darwin-arm64": "workspace:*",
-        "@muse/muse-darwin-x64": "workspace:*",
-        "@muse/muse-linux-arm64": "workspace:*",
-        "@muse/muse-linux-x64": "workspace:*",
-        "@muse/muse-win32-x64": "workspace:*"
+        "@muse-gpt/muse-darwin-arm64": "workspace:*",
+        "@muse-gpt/muse-darwin-x64": "workspace:*",
+        "@muse-gpt/muse-linux-arm64": "workspace:*",
+        "@muse-gpt/muse-linux-x64": "workspace:*",
+        "@muse-gpt/muse-win32-x64": "workspace:*"
     },
     "devDependencies": {
         "@types/node": "^22.13.10",

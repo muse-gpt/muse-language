@@ -1,5 +1,5 @@
 {
-    "name": "@muse/muse-unknown-wasm32",
+    "name": "@muse-gpt/muse-unknown-wasm32",
     "version": "0.0.0",
     "description": "Muse wasm artifact placeholder (wasm32-unknown-unknown)",
     "type": "module",

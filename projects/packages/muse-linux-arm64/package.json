@@ -1,5 +1,5 @@
 {
-    "name": "@muse/muse-linux-arm64",
+    "name": "@muse-gpt/muse-linux-arm64",
     "version": "0.0.0",
     "description": "Muse native binary for Linux arm64",
     "type": "module",

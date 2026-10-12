@@ -1,5 +1,5 @@
 {
-    "name": "@muse/homepage",
+    "name": "@muse-gpt/homepage",
     "version": "0.0.1",
     "private": true,
     "type": "module",
@@ -11,7 +11,7 @@
         "preview": "vmz serve --profile static ."
     },
     "dependencies": {
-        "@muse/muse": "workspace:*",
+        "@muse-gpt/muse": "workspace:*",
         "@vmz/core": "0.2.7",
         "@vmz/ui": "0.2.7"
     },

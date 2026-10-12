@@ -1,5 +1,5 @@
 {
-    "name": "@muse/muse-win32-x64",
+    "name": "@muse-gpt/muse-win32-x64",
     "version": "0.0.0",
     "description": "Muse native binary for Windows x64",
     "type": "module",

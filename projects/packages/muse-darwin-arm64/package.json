@@ -1,5 +1,5 @@
 {
-    "name": "@muse/muse-darwin-arm64",
+    "name": "@muse-gpt/muse-darwin-arm64",
     "version": "0.0.0",
     "description": "Muse native binary for macOS arm64",
     "type": "module",

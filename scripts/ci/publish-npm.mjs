@@ -51,7 +51,7 @@ const NATIVE_PLATFORMS = [
 /** @type {{ dir: string, publishName?: string }[]} */
 const JS_PACKAGES = [
     { dir: "projects/packages/muse-skills" },
-    { dir: "projects/packages/muse", publishName: "@muse/muse" },
+    { dir: "projects/packages/muse", publishName: "@muse-gpt/muse" },
 ];
 
 function fail(msg) {
@@ -196,7 +196,7 @@ function publishNative(version, artifactsRoot) {
     let published = 0;
     let skipped = 0;
     for (const plat of NATIVE_PLATFORMS) {
-        const name = `@muse/muse-${plat.short}`;
+        const name = `@muse-gpt/muse-${plat.short}`;
         const packageDir = path.join(ROOT, "projects/packages", `muse-${plat.short}`);
         const artDir = path.join(artifactsRoot, plat.short);
         if (!fs.existsSync(artDir)) {
@@ -251,7 +251,7 @@ function publishJs(version, artifactsRoot) {
     let skipped = 0;
     const optionalNatives = {};
     for (const plat of NATIVE_PLATFORMS) {
-        const n = `@muse/muse-${plat.short}`;
+        const n = `@muse-gpt/muse-${plat.short}`;
         const artDir = path.join(artifactsRoot, plat.short);
         if (fs.existsSync(artDir) || versionExists(n, version)) {
             optionalNatives[n] = version;
@@ -287,7 +287,7 @@ function publishJs(version, artifactsRoot) {
         if (!pkg.repository) {
             pkg.repository = { type: "git", url: REPO_URL };
         }
-        if (name === "@muse/muse") {
+        if (name === "@muse-gpt/muse") {
             pkg.optionalDependencies = { ...(pkg.optionalDependencies ?? {}), ...optionalNatives };
         }
         delete pkg.devDependencies;
