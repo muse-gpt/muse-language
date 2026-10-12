@@ -1,6 +1,7 @@
 ﻿namespace game_battle_arc;
 
-# 婵€鐑堬細鎸佺画鐨勫崄鍏垎闊崇鍜屼綆闊?E 寤虹珛鎴樻枟鍘嬪姏銆?timeline {
+# Intense: continuous sixteenths and a low E establish battle pressure.
+timeline {
   act assault : 0..16
   act fracture : 16..20
   act lament : 20..36
@@ -8,7 +9,8 @@
   act final_charge : 44..60
 }
 
-# 閫熷害鍦ㄦ柇瑁傚鍧犺惤锛屽湪鏈€缁堝啿閿嬪鍥炲埌鏈€蹇€?tempo {
+# Tempo collapses at the fracture, then returns for the final charge.
+tempo {
   at 0 bpm 156
   at 16 bpm 96
   at 20 bpm 76

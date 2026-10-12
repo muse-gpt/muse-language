@@ -13,12 +13,14 @@
       <h1>A readable score for complex work.</h1>
       <p class="muse-page__lede">
         Muse keeps creative intent, orchestration rules, and executable time in one source of truth.
+        Render engines consume the plan — they do not rewrite Muse semantics.
       </p>
       <section class="muse-page__stack">
         <Card title="intent" description="Records the why before choosing implementation details." />
         <Card title="orchestrate" description="Translates the why into cross-dimensional mappings and transition strategy." />
         <Card title="execute" description="timeline, music, and visual blocks feed a deterministic render plan." />
       </section>
+      <CodeBlock :code="primer" caption="muse" />
       <p><Link href="/start"><Button type="button" variant="primary">Start with the guide</Button></Link></p>
     </main>
   </div>
@@ -66,5 +68,28 @@
 </style>
 
 <script client>
-export default class LanguagePage {}
+export default class LanguagePage {
+    primer = `namespace motif_a;
+
+intent {
+  emotion "urgent resolve" intensity 0.8 for theme
+}
+
+orchestrate for theme {
+  hard_constraints: ["keep the motif recognizable"]
+  soft_preferences: ["strings before brass"]
+}
+
+timeline {
+  act theme : 0..8
+}
+
+tempo { at 0 bpm 120 }
+
+music for theme {
+  key "C major"
+  meter 4/4
+  motif "C4 E4 G4 C5"
+}`;
+}
 </script>

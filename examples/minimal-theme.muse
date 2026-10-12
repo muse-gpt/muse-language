@@ -1,6 +1,7 @@
 ﻿namespace minimal_theme;
 
-# 鏈€灏忕ず渚嬶細涓€涓钀藉嵆鍙敓鎴?MIDI銆丮usicXML銆丳DF銆乄AV 鍜?MP3銆?timeline {
+# Minimal composition: one section can export MIDI / MusicXML / preview audio.
+timeline {
   act theme : 0..8
 }
 
