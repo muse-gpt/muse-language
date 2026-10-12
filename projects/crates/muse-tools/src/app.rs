@@ -12,11 +12,11 @@ pub(crate) struct Cli {
 pub(crate) enum Command {
     /// Create a Muse project with a starter script.
     Init { path: Option<PathBuf> },
-    /// Parse and validate a Muse source file.
-    Check { script: PathBuf },
+    /// Parse and validate a Muse source file or project (`--project`).
+    Check(CheckArgs),
     /// Compile a Muse source file and print its render plan as JSON.
     Compile(CompileArgs),
-    /// Render a low-resolution PNG/WAV preview beside the source file.
+    /// Render a low-resolution PNG/WAV preview (file or `--project --entry`).
     Preview(PreviewArgs),
     /// Render a score or audiovisual output.
     Render(RenderArgs),
@@ -45,8 +45,27 @@ pub(crate) enum Command {
 }
 
 #[derive(Debug, Args)]
+pub(crate) struct CheckArgs {
+    /// Script to check when not using `--project`.
+    pub(crate) script: Option<PathBuf>,
+    /// Project root containing `muse.von`.
+    #[arg(long)]
+    pub(crate) project: Option<PathBuf>,
+    /// Entry id when checking a multi-entry project.
+    #[arg(long)]
+    pub(crate) entry: Option<String>,
+}
+
+#[derive(Debug, Args)]
 pub(crate) struct PreviewArgs {
-    pub(crate) script: PathBuf,
+    /// Script to preview when not using `--project`.
+    pub(crate) script: Option<PathBuf>,
+    /// Project root containing `muse.von`.
+    #[arg(long)]
+    pub(crate) project: Option<PathBuf>,
+    /// Entry id when previewing a project.
+    #[arg(long)]
+    pub(crate) entry: Option<String>,
     /// Linear scale applied to plan width/height (0.01–1.0). Default 0.1.
     #[arg(long, default_value_t = 0.1)]
     pub(crate) scale: f32,

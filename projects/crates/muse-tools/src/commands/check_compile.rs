@@ -1,14 +1,63 @@
-use crate::app::CompileArgs;
+use crate::app::{CheckArgs, CompileArgs};
 use anyhow::{Context, Result, bail};
+use muse_project::OutputKind;
 use muse_types::RenderSettings;
 use std::{fs, path::Path};
 
-pub(crate) fn check(path: &Path) -> Result<()> {
-    let compilation = compile_file(path)?;
+pub(crate) fn check(args: &CheckArgs) -> Result<()> {
+    if let Some(project) = args.project.as_deref() {
+        return check_project(project, args.entry.as_deref());
+    }
+    let script = args
+        .script
+        .as_deref()
+        .context("pass a script path or --project <dir>")?;
+    let compilation = compile_file(script)?;
     print_diagnostics(&compilation);
     if !compilation.is_success() {
         bail!("validation failed");
     }
+    Ok(())
+}
+
+fn check_project(project: &Path, entry_id: Option<&str>) -> Result<()> {
+    let manifest = muse_project::load_manifest(project)?;
+    let entries: Vec<_> = match entry_id {
+        Some(id) => vec![muse_project::find_entry(&manifest, Some(id))?],
+        None => manifest.entries.iter().collect(),
+    };
+    let mut failed = false;
+    for entry in entries {
+        let source = project.join(&entry.source);
+        println!("check entry `{}` ({})", entry.id, source.display());
+        let compilation = compile_file(&source)?;
+        print_diagnostics(&compilation);
+        if !compilation.is_success() {
+            failed = true;
+            continue;
+        }
+        for output in &entry.outputs {
+            if output.path.trim().is_empty() {
+                bail!("entry `{}` output `{}` has an empty path", entry.id, output.id);
+            }
+            if matches!(output.kind, OutputKind::Preview | OutputKind::Video | OutputKind::Audio)
+                && Path::new(&output.path).is_absolute()
+            {
+                bail!(
+                    "entry `{}` output `{}` must use a project-relative path",
+                    entry.id,
+                    output.id
+                );
+            }
+        }
+    }
+    if failed {
+        bail!("project validation failed");
+    }
+    println!(
+        "project ok ({})",
+        muse_project::manifest_path(project)?.display()
+    );
     Ok(())
 }
 

@@ -14,14 +14,34 @@ fn ensure_parent(path: &Path) -> Result<()> {
 }
 
 pub(crate) fn preview(args: &PreviewArgs) -> Result<()> {
-    let plan = check_compile::compile_file(&args.script)?
+    let (script, output) = resolve_preview_paths(args)?;
+    let plan = check_compile::compile_file(&script)?
         .plan
         .context("cannot preview an invalid script")?;
-    let output = args
-        .script
-        .parent()
-        .unwrap_or_else(|| Path::new("."))
-        .join("preview");
+    let settings = muse_types::RenderSettings {
+        width: plan.settings.width,
+        height: plan.settings.height,
+        frame_rate: plan.settings.frame_rate,
+        sample_rate: plan.settings.sample_rate,
+    };
+    // Recompile with project render defaults when available.
+    let plan = if let Some(project) = args.project.as_deref() {
+        let manifest = muse_project::load_manifest(project)?;
+        let source = check_compile::source_file(&script)?;
+        muse_ir::compile(
+            &source,
+            muse_types::RenderSettings {
+                width: manifest.render.width,
+                height: manifest.render.height,
+                frame_rate: manifest.render.frame_rate,
+                sample_rate: settings.sample_rate,
+            },
+        )
+        .plan
+        .context("cannot preview an invalid script")?
+    } else {
+        plan
+    };
     let manifest = muse_media::render_preview_with(
         &plan,
         &output,
@@ -40,6 +60,27 @@ pub(crate) fn preview(args: &PreviewArgs) -> Result<()> {
         manifest.audio_seconds
     );
     Ok(())
+}
+
+fn resolve_preview_paths(args: &PreviewArgs) -> Result<(std::path::PathBuf, std::path::PathBuf)> {
+    if let Some(project) = args.project.as_deref() {
+        let manifest = muse_project::load_manifest(project)?;
+        let entry = muse_project::find_entry(&manifest, args.entry.as_deref())?;
+        let script = project.join(&entry.source);
+        let output = entry
+            .outputs
+            .iter()
+            .find(|output| matches!(output.kind, muse_project::OutputKind::Preview))
+            .map(|output| project.join(&output.path))
+            .unwrap_or_else(|| project.join("library").join(&entry.id).join("preview"));
+        return Ok((script, output));
+    }
+    let script = args
+        .script
+        .clone()
+        .context("pass a script path or --project <dir>")?;
+    let output = script.parent().unwrap_or_else(|| Path::new(".")).join("preview");
+    Ok((script, output))
 }
 
 pub(crate) fn render(args: &RenderArgs) -> Result<()> {

@@ -15,9 +15,25 @@ pub use types::{
     OutputSpec, ProjectEntry, ProjectInfo, ProjectManifest, SkillManifest,
 };
 
+/// Resolve the project manifest path: prefer root `muse.von`, fall back to legacy `muse.toml`.
+pub fn manifest_path(project: &Path) -> Result<std::path::PathBuf> {
+    let von = project.join("muse.von");
+    if von.is_file() {
+        return Ok(von);
+    }
+    let toml = project.join("muse.toml");
+    if toml.is_file() {
+        return Ok(toml);
+    }
+    bail!(
+        "project manifest not found at {} (expected muse.von)",
+        von.display()
+    )
+}
+
 /// 读取并校验工程清单，确保入口和产物 id 在工程内唯一且路径不为空。
 pub fn load_manifest(project: &Path) -> Result<ProjectManifest> {
-    let path = project.join("muse.toml");
+    let path = manifest_path(project)?;
     let manifest: ProjectManifest = toml::from_str(
         &fs::read_to_string(&path).with_context(|| format!("cannot read {}", path.display()))?,
     )
@@ -51,15 +67,51 @@ pub fn validate_manifest(manifest: &ProjectManifest) -> Result<()> {
     Ok(())
 }
 pub fn init(path: &Path) -> Result<()> {
-    fs::create_dir_all(path.join("assets"))?;
-    fs::create_dir_all(path.join("skills"))?;
-    fs::create_dir_all(path.join("artifacts"))?;
+    fs::create_dir_all(path.join("assets").join("scenes"))?;
+    fs::create_dir_all(path.join("assets").join("audio"))?;
+    fs::create_dir_all(path.join("assets").join("textures"))?;
+    fs::create_dir_all(path.join("library"))?;
     fs::write(
-        path.join("muse.toml"),
-        "[project]\nid = \"muse-project\"\nversion = \"0.1.0\"\n\n[render]\nwidth = 1920\nheight = 1080\nframe_rate = 24\n\n[[entries]]\nid = \"main\"\nsource = \"main.muse\"\n",
+        path.join("muse.von"),
+        r#"[project]
+id = "muse-project"
+version = "0.1.0"
+
+[render]
+width = 1920
+height = 1080
+frame_rate = 24
+
+[[entries]]
+id = "main"
+source = "assets/scenes/main.muse"
+
+[[entries.outputs]]
+id = "preview"
+kind = "preview"
+path = "library/main/preview"
+"#,
     )?;
-    fs::write(path.join("main.muse"), SAMPLE)?;
+    fs::write(path.join("assets").join("scenes").join("main.muse"), SAMPLE)?;
+    fs::write(
+        path.join("assets").join("scenes").join("main.muse.meta"),
+        "guid: muse-scene-main\nversion: 1\nkind: scene\n",
+    )?;
     Ok(())
+}
+
+/// Resolve an entry by id, or the sole entry when `entry_id` is `None`.
+pub fn find_entry<'a>(manifest: &'a ProjectManifest, entry_id: Option<&str>) -> Result<&'a ProjectEntry> {
+    match entry_id {
+        Some(id) => manifest
+            .entries
+            .iter()
+            .find(|entry| entry.id == id)
+            .with_context(|| format!("unknown entry `{id}`")),
+        None if manifest.entries.len() == 1 => Ok(&manifest.entries[0]),
+        None if manifest.entries.is_empty() => bail!("project has no entries"),
+        None => bail!("multiple entries; pass --entry <id>"),
+    }
 }
 pub fn hash_file(path: &Path) -> Result<ContentHash> {
     let bytes = fs::read(path)?;
@@ -171,9 +223,25 @@ orchestrate for chorus {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::{env, fs, time::{SystemTime, UNIX_EPOCH}};
+
     #[test]
     fn validates_multiple_outputs() {
         let m: ProjectManifest = toml::from_str("[project]\nid='p'\nversion='0.1'\n[[entries]]\nid='e'\nsource='e.muse'\n[[entries.outputs]]\nid='a'\nkind='audio'\npath='a.wav'\n").unwrap();
         validate_manifest(&m).unwrap();
+    }
+
+    #[test]
+    fn prefers_muse_von_and_scaffolds_unity_tree() {
+        let stamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let root = env::temp_dir().join(format!("muse-project-init-{stamp}"));
+        init(&root).unwrap();
+        assert!(root.join("muse.von").is_file());
+        assert!(!root.join("muse.toml").exists());
+        assert!(root.join("assets/scenes/main.muse").is_file());
+        assert!(root.join("library").is_dir());
+        let manifest = load_manifest(&root).unwrap();
+        assert_eq!(manifest.entries[0].source, "assets/scenes/main.muse");
+        let _ = fs::remove_dir_all(root);
     }
 }

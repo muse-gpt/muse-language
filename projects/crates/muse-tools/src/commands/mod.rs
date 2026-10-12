@@ -11,7 +11,7 @@ use anyhow::Result;
 pub(crate) async fn dispatch(cli: Cli) -> Result<()> {
     match cli.command {
         Command::Init { path } => project::init(path.as_deref()),
-        Command::Check { script } => check_compile::check(&script),
+        Command::Check(args) => check_compile::check(&args),
         Command::Compile(args) => check_compile::compile(&args),
         Command::Preview(args) => render::preview(&args),
         Command::Render(args) => render::render(&args),
