@@ -115,12 +115,8 @@ fn blit_cover(dst: &mut RgbImage, src: &RgbImage) {
     let resized = imageops::resize(src, tw, th, imageops::FilterType::Triangle);
     let x0 = tw.saturating_sub(dw) / 2;
     let y0 = th.saturating_sub(dh) / 2;
-    for y in 0..dh {
-        for x in 0..dw {
-            let px = resized.get_pixel(x0 + x, y0 + y);
-            dst.put_pixel(x, y, *px);
-        }
-    }
+    let cropped = imageops::crop_imm(&resized, x0, y0, dw, dh).to_image();
+    imageops::replace(dst, &cropped, 0, 0);
 }
 
 pub fn plan_has_images(plan: &RenderPlan) -> bool {
