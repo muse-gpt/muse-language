@@ -35,6 +35,8 @@ pub struct VisualLayer {
     pub images: Vec<String>,
     /// Optional full-frame vignette strength in `[0, 1]`.
     pub vignette: Option<f32>,
+    /// Optional film grain strength in `[0, 1]`.
+    pub grain: Option<f32>,
 }
 #[derive(Debug, Clone, Serialize)]
 pub struct RenderPlan {
@@ -135,6 +137,7 @@ pub fn compile(source: &str, settings: RenderSettings) -> Compilation {
                     let mut background_color = None;
                     let mut images = Vec::new();
                     let mut vignette = None;
+                    let mut grain = None;
                     if let BlockContent::Visual { elements } = &block.content {
                         visuals += elements.len().max(1);
                         for element in elements {
@@ -150,18 +153,17 @@ pub fn compile(source: &str, settings: RenderSettings) -> Compilation {
                                     images.push(uri.trim().trim_matches('"').to_owned());
                                 }
                                 VisualDecl::Vignette { strength, span } => {
-                                    match strength.trim().parse::<f32>() {
-                                        Ok(value) if (0.0..=1.0).contains(&value) => {
-                                            vignette = Some(value);
-                                        }
-                                        Ok(_) => diagnostics.push(Diagnostic::error(
-                                            "vignette strength must be between 0 and 1",
-                                            *span,
-                                        )),
-                                        Err(_) => diagnostics.push(Diagnostic::error(
-                                            "vignette strength must be a number",
-                                            *span,
-                                        )),
+                                    match parse_unit_strength(strength) {
+                                        Ok(value) => vignette = Some(value),
+                                        Err(message) => diagnostics
+                                            .push(Diagnostic::error(format!("vignette {message}"), *span)),
+                                    }
+                                }
+                                VisualDecl::Grain { strength, span } => {
+                                    match parse_unit_strength(strength) {
+                                        Ok(value) => grain = Some(value),
+                                        Err(message) => diagnostics
+                                            .push(Diagnostic::error(format!("grain {message}"), *span)),
                                     }
                                 }
                                 _ => {}
@@ -183,6 +185,7 @@ pub fn compile(source: &str, settings: RenderSettings) -> Compilation {
                         background_color,
                         images,
                         vignette,
+                        grain,
                     });
                 }
                 BlockKind::Orchestrate => {
@@ -246,6 +249,14 @@ pub fn compile(source: &str, settings: RenderSettings) -> Compilation {
     Compilation { plan, diagnostics }
 }
 
+fn parse_unit_strength(raw: &str) -> Result<f32, &'static str> {
+    match raw.trim().parse::<f32>() {
+        Ok(value) if (0.0..=1.0).contains(&value) => Ok(value),
+        Ok(_) => Err("strength must be between 0 and 1"),
+        Err(_) => Err("strength must be a number"),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -295,5 +306,15 @@ mod tests {
         );
         let plan = c.plan.expect("valid visual");
         assert_eq!(plan.visuals[0].vignette, Some(0.35));
+    }
+
+    #[test]
+    fn captures_visual_grain() {
+        let c = compile(
+            r##"timeline { act main : 0..4 } visual for main { background color "#0b1524" grain 0.06 }"##,
+            RenderSettings::default(),
+        );
+        let plan = c.plan.expect("valid visual");
+        assert_eq!(plan.visuals[0].grain, Some(0.06));
     }
 }

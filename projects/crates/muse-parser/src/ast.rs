@@ -113,6 +113,11 @@ pub enum VisualDecl {
         strength: String,
         span: Span,
     },
+    /// Film grain; strength in `[0, 1]` (reference default ≈ 0.06).
+    Grain {
+        strength: String,
+        span: Span,
+    },
 }
 
 #[derive(Debug, Clone, Serialize)]

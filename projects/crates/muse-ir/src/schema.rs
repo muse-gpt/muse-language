@@ -33,6 +33,7 @@ pub struct IrVisualLayer {
     pub background_color: Option<String>,
     pub images: Vec<String>,
     pub vignette: Option<f32>,
+    pub grain: Option<f32>,
 }
 #[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct CompilationDocument {
@@ -83,6 +84,7 @@ impl From<&VisualLayer> for IrVisualLayer {
             background_color: value.background_color.clone(),
             images: value.images.clone(),
             vignette: value.vignette,
+            grain: value.grain,
         }
     }
 }
