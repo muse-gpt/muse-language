@@ -1,11 +1,17 @@
-# Muse Language for VS Code
+# Muse Language
 
-Syntax highlighting and basic language configuration for `.muse` audiovisual composition scripts.
+VS Code / Cursor extension for `.muse` scripts: TextMate grammar, language configuration, Muse color theme, and a one-click language guide. Marketplace-facing (not an npm library).
 
-The extension registers the same TextMate grammar and token colors used by the Muse homepage's Shiki code previews:
+## Features
 
-- `syntaxes/muse.tmLanguage.json` defines Muse scopes.
-- `themes/muse-color-theme.json` defines the shared token palette.
-- `.muse` files receive comments, declarations, properties, strings, numbers, and section-name highlighting.
+- Syntax highlighting for `.muse` (comments, declarations, properties, section names)
+- Language configuration (brackets, comments, folding)
+- **Muse** color theme
+- Command: **Muse: Open Language Guide**
 
-Run `pnpm build` from this directory to bundle the command extension. The `Muse: Open Language Guide` command opens the local homepage guide during development.
+## Example
+
+Open any `.muse` file to see highlighting. Command palette → **Muse: Open Language Guide** opens the product README.
+
+CLI: [`@muse-gpt/muse`](https://www.npmjs.com/package/@muse-gpt/muse).  
+Product overview: [repository README](https://github.com/muse-gpt/muse-language#readme).
