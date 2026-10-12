@@ -33,6 +33,8 @@ pub struct VisualLayer {
     pub background_color: Option<String>,
     /// Image URIs declared as `image "..."` inside the visual block (project-relative).
     pub images: Vec<String>,
+    /// Optional full-frame vignette strength in `[0, 1]`.
+    pub vignette: Option<f32>,
 }
 #[derive(Debug, Clone, Serialize)]
 pub struct RenderPlan {
@@ -132,6 +134,7 @@ pub fn compile(source: &str, settings: RenderSettings) -> Compilation {
                 BlockKind::Visual => {
                     let mut background_color = None;
                     let mut images = Vec::new();
+                    let mut vignette = None;
                     if let BlockContent::Visual { elements } = &block.content {
                         visuals += elements.len().max(1);
                         for element in elements {
@@ -145,6 +148,21 @@ pub fn compile(source: &str, settings: RenderSettings) -> Compilation {
                                     ..
                                 } => {
                                     images.push(uri.trim().trim_matches('"').to_owned());
+                                }
+                                VisualDecl::Vignette { strength, span } => {
+                                    match strength.trim().parse::<f32>() {
+                                        Ok(value) if (0.0..=1.0).contains(&value) => {
+                                            vignette = Some(value);
+                                        }
+                                        Ok(_) => diagnostics.push(Diagnostic::error(
+                                            "vignette strength must be between 0 and 1",
+                                            *span,
+                                        )),
+                                        Err(_) => diagnostics.push(Diagnostic::error(
+                                            "vignette strength must be a number",
+                                            *span,
+                                        )),
+                                    }
                                 }
                                 _ => {}
                             }
@@ -164,6 +182,7 @@ pub fn compile(source: &str, settings: RenderSettings) -> Compilation {
                         target: block.target.clone(),
                         background_color,
                         images,
+                        vignette,
                     });
                 }
                 BlockKind::Orchestrate => {
@@ -266,5 +285,15 @@ mod tests {
         );
         let plan = c.plan.expect("valid visual");
         assert_eq!(plan.visuals[0].images, ["assets/textures/plate.png"]);
+    }
+
+    #[test]
+    fn captures_visual_vignette() {
+        let c = compile(
+            r##"timeline { act main : 0..4 } visual for main { background color "#0b1524" vignette 0.35 }"##,
+            RenderSettings::default(),
+        );
+        let plan = c.plan.expect("valid visual");
+        assert_eq!(plan.visuals[0].vignette, Some(0.35));
     }
 }

@@ -440,6 +440,15 @@ fn parse_visual_elements(body: &str, body_span: Span) -> Vec<VisualDecl> {
             rest = next;
             continue;
         }
+        if let Some(after) = trimmed.strip_prefix("vignette") {
+            let (value, next) = take_visual_value(after);
+            elements.push(VisualDecl::Vignette {
+                strength: value,
+                span: body_span,
+            });
+            rest = next;
+            continue;
+        }
         // Skip one grapheme cluster / char and keep scanning.
         let mut chars = trimmed.chars();
         chars.next();

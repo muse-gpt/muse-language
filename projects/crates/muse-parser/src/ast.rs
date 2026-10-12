@@ -108,6 +108,11 @@ pub enum VisualDecl {
         value: String,
         span: Span,
     },
+    /// Full-frame post darken; strength in `[0, 1]` (reference default ≈ 0.35).
+    Vignette {
+        strength: String,
+        span: Span,
+    },
 }
 
 #[derive(Debug, Clone, Serialize)]
