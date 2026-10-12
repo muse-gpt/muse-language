@@ -99,6 +99,9 @@ fn compose_frame_cpu(
         let lut = crate::lut::resolve_lut(&name, &options.asset_root)?;
         crate::lut::apply_lut_rgb(&mut canvas, &lut, mix);
     }
+    if let Some(strength) = layers_pulse(&layers) {
+        apply_pulse_rgb(&mut canvas, strength, plan.shot_progress_normalized(t));
+    }
     if let Some(strength) = layers_bloom(&layers) {
         apply_bloom_rgb(&mut canvas, strength);
     }
@@ -140,6 +143,7 @@ fn compose_frame_gpu(
             height,
             asset_root: options.asset_root.clone(),
             time: t,
+            shot_progress: plan.shot_progress_normalized(t),
         },
     )?;
     let mut canvas = RgbImage::from_fn(width, height, |x, y| {
@@ -237,6 +241,10 @@ fn layers_grain(layers: &[&muse_ir::VisualLayer]) -> Option<f32> {
     layers.iter().rev().find_map(|layer| layer.grain)
 }
 
+fn layers_pulse(layers: &[&muse_ir::VisualLayer]) -> Option<f32> {
+    layers.iter().rev().find_map(|layer| layer.pulse)
+}
+
 fn layers_bloom(layers: &[&muse_ir::VisualLayer]) -> Option<f32> {
     layers.iter().rev().find_map(|layer| layer.bloom)
 }
@@ -247,6 +255,33 @@ fn layers_lut(layers: &[&muse_ir::VisualLayer]) -> Option<(String, f32)> {
         let mix = layer.lut_mix.unwrap_or(1.0);
         Some((name.clone(), mix))
     })
+}
+
+/// Center ember pulse driven by shot-local progress (shot FX, not lyrics).
+fn apply_pulse_rgb(canvas: &mut RgbImage, strength: f32, shot_progress: f32) {
+    let strength = strength.clamp(0.0, 1.0);
+    if strength <= 0.0 {
+        return;
+    }
+    let envelope = (shot_progress * std::f32::consts::PI).sin().max(0.0);
+    let amp = strength * envelope;
+    if amp <= 0.0 {
+        return;
+    }
+    let width = canvas.width();
+    let height = canvas.height();
+    for y in 0..height {
+        for x in 0..width {
+            let u = (x as f32 + 0.5) / width as f32;
+            let v = (y as f32 + 0.5) / height as f32;
+            let r2 = (u - 0.5).powi(2) + (v - 0.5).powi(2);
+            let glow = (-r2 * 14.0).exp() * amp;
+            let p = canvas.get_pixel_mut(x, y);
+            p[0] = ((p[0] as f32 / 255.0 + glow * 1.0).clamp(0.0, 1.0) * 255.0).round() as u8;
+            p[1] = ((p[1] as f32 / 255.0 + glow * 0.72).clamp(0.0, 1.0) * 255.0).round() as u8;
+            p[2] = ((p[2] as f32 / 255.0 + glow * 0.35).clamp(0.0, 1.0) * 255.0).round() as u8;
+        }
+    }
 }
 
 /// Soft highlight bloom matching the GPU 5×5 threshold blur.

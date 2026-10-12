@@ -12,6 +12,8 @@ pub struct GpuComposeOptions {
     pub asset_root: PathBuf,
     /// Normalized preview/render time in `[0, 1]` (seeds animated grain).
     pub time: f32,
+    /// Progress within the active shot in `[0, 1]` (drives `fx pulse`).
+    pub shot_progress: f32,
 }
 
 pub struct GpuCompositor {
@@ -254,6 +256,7 @@ impl GpuCompositor {
         let mut bloom_strength = 0.0_f32;
         let mut lut_name: Option<String> = None;
         let mut lut_mix = 0.0_f32;
+        let mut pulse_strength = 0.0_f32;
         let mut image_draws: Vec<(RgbaImage, CoverUv)> = Vec::new();
 
         for layer in layers {
@@ -268,6 +271,9 @@ impl GpuCompositor {
             }
             if let Some(strength) = layer.bloom {
                 bloom_strength = strength.clamp(0.0, 1.0);
+            }
+            if let Some(strength) = layer.pulse {
+                pulse_strength = strength.clamp(0.0, 1.0);
             }
             if let Some(name) = layer.lut.as_ref() {
                 lut_name = Some(name.clone());
@@ -340,7 +346,11 @@ impl GpuCompositor {
 
         let mut post_keep: Option<(wgpu::Texture, wgpu::Buffer, wgpu::BindGroup)> = None;
         let mut lut_tex_keep: Option<wgpu::Texture> = None;
-        if vignette_strength > 0.0 || grain_strength > 0.0 || bloom_strength > 0.0 || lut_mix > 0.0
+        if vignette_strength > 0.0
+            || grain_strength > 0.0
+            || bloom_strength > 0.0
+            || lut_mix > 0.0
+            || pulse_strength > 0.0
         {
             let lut_img = match (&lut_name, lut_mix > 0.0) {
                 (Some(name), true) => crate::lut::resolve_lut(name, &options.asset_root)?,
@@ -370,7 +380,9 @@ impl GpuCompositor {
                 bloom: bloom_strength,
                 time: options.time.clamp(0.0, 1.0),
                 lut_mix: if lut_name.is_some() { lut_mix } else { 0.0 },
-                _pad: [0.0; 3],
+                pulse: pulse_strength,
+                shot_progress: options.shot_progress.clamp(0.0, 1.0),
+                _pad: 0.0,
             };
             let uniform_buf = self.device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("muse-post-uniform"),
@@ -623,7 +635,9 @@ struct PostUniforms {
     bloom: f32,
     time: f32,
     lut_mix: f32,
-    _pad: [f32; 3],
+    pulse: f32,
+    shot_progress: f32,
+    _pad: f32,
 }
 
 #[derive(Clone, Copy)]
@@ -736,9 +750,9 @@ struct Post {
     bloom: f32,
     time: f32,
     lut_mix: f32,
-    _p0: f32,
-    _p1: f32,
-    _p2: f32,
+    pulse: f32,
+    shot_progress: f32,
+    _pad: f32,
 };
 
 @group(0) @binding(0) var src_tex: texture_2d<f32>;
@@ -804,10 +818,20 @@ fn vs_main(@builtin(vertex_index) idx: u32) -> VsOut {
     return out;
 }
 
+fn pulse_glow(uv: vec2<f32>) -> vec3<f32> {
+    let envelope = max(sin(post.shot_progress * 3.14159265), 0.0);
+    let amp = post.pulse * envelope;
+    let d = uv - vec2<f32>(0.5, 0.5);
+    let r2 = dot(d, d);
+    let glow = exp(-r2 * 14.0) * amp;
+    return vec3<f32>(1.0, 0.72, 0.35) * glow;
+}
+
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     var color = textureSample(src_tex, src_samp, in.uv).rgb;
     color = grade_lut(color);
+    color += pulse_glow(in.uv);
     color += soft_bloom(in.uv) * post.bloom * 2.5;
     let d = distance(in.uv, vec2<f32>(0.5, 0.5)) * 1.41421356;
     let edge = smoothstep(0.25, 0.95, d);
