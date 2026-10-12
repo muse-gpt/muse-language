@@ -3,7 +3,11 @@ use crate::{
     commands::check_compile,
 };
 use anyhow::{Context, Result, bail};
-use std::{fs, path::Path};
+use std::{
+    env, fs,
+    path::{Path, PathBuf},
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 fn ensure_parent(path: &Path) -> Result<()> {
     if let Some(parent) = path.parent().filter(|parent| !parent.as_os_str().is_empty()) {
@@ -14,34 +18,8 @@ fn ensure_parent(path: &Path) -> Result<()> {
 }
 
 pub(crate) fn preview(args: &PreviewArgs) -> Result<()> {
-    let (script, output) = resolve_preview_paths(args)?;
-    let plan = check_compile::compile_file(&script)?
-        .plan
-        .context("cannot preview an invalid script")?;
-    let settings = muse_types::RenderSettings {
-        width: plan.settings.width,
-        height: plan.settings.height,
-        frame_rate: plan.settings.frame_rate,
-        sample_rate: plan.settings.sample_rate,
-    };
-    // Recompile with project render defaults when available.
-    let plan = if let Some(project) = args.project.as_deref() {
-        let manifest = muse_project::load_manifest(project)?;
-        let source = check_compile::source_file(&script)?;
-        muse_ir::compile(
-            &source,
-            muse_types::RenderSettings {
-                width: manifest.render.width,
-                height: manifest.render.height,
-                frame_rate: manifest.render.frame_rate,
-                sample_rate: settings.sample_rate,
-            },
-        )
-        .plan
-        .context("cannot preview an invalid script")?
-    } else {
-        plan
-    };
+    let (script, output, asset_root) = resolve_preview_paths(args)?;
+    let plan = compile_with_project_settings(&script, args.project.as_deref())?;
     let manifest = muse_media::render_preview_with(
         &plan,
         &output,
@@ -49,6 +27,7 @@ pub(crate) fn preview(args: &PreviewArgs) -> Result<()> {
             scale: args.scale,
             max_frames: args.max_frames,
             max_audio_seconds: args.max_audio_seconds,
+            asset_root,
         },
     )?;
     println!(
@@ -62,7 +41,7 @@ pub(crate) fn preview(args: &PreviewArgs) -> Result<()> {
     Ok(())
 }
 
-fn resolve_preview_paths(args: &PreviewArgs) -> Result<(std::path::PathBuf, std::path::PathBuf)> {
+fn resolve_preview_paths(args: &PreviewArgs) -> Result<(PathBuf, PathBuf, PathBuf)> {
     if let Some(project) = args.project.as_deref() {
         let manifest = muse_project::load_manifest(project)?;
         let entry = muse_project::find_entry(&manifest, args.entry.as_deref())?;
@@ -73,42 +52,136 @@ fn resolve_preview_paths(args: &PreviewArgs) -> Result<(std::path::PathBuf, std:
             .find(|output| matches!(output.kind, muse_project::OutputKind::Preview))
             .map(|output| project.join(&output.path))
             .unwrap_or_else(|| project.join("library").join(&entry.id).join("preview"));
-        return Ok((script, output));
+        return Ok((script, output, project.to_path_buf()));
     }
     let script = args
         .script
         .clone()
         .context("pass a script path or --project <dir>")?;
     let output = script.parent().unwrap_or_else(|| Path::new(".")).join("preview");
-    Ok((script, output))
+    Ok((script.clone(), output, infer_asset_root(&script)))
+}
+
+fn infer_asset_root(script: &Path) -> PathBuf {
+    for ancestor in script.ancestors() {
+        if ancestor.join("muse.von").is_file() || ancestor.join("muse.toml").is_file() {
+            return ancestor.to_path_buf();
+        }
+    }
+    env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+}
+
+fn compile_with_project_settings(script: &Path, project: Option<&Path>) -> Result<muse_ir::RenderPlan> {
+    let source = check_compile::source_file(script)?;
+    let settings = if let Some(project) = project {
+        let manifest = muse_project::load_manifest(project)?;
+        muse_types::RenderSettings {
+            width: manifest.render.width,
+            height: manifest.render.height,
+            frame_rate: manifest.render.frame_rate,
+            sample_rate: muse_types::RenderSettings::default().sample_rate,
+        }
+    } else {
+        muse_types::RenderSettings::default()
+    };
+    muse_ir::compile(&source, settings)
+        .plan
+        .context("cannot use an invalid script")
 }
 
 pub(crate) fn render(args: &RenderArgs) -> Result<()> {
-    let format = match args.format {
-        Some(format) => format,
-        None => format_from_path(&args.output)?,
-    };
-    ensure_parent(&args.output)?;
-    let source = check_compile::source_file(&args.script)?;
+    let (script, output, asset_root, format) = resolve_render_target(args)?;
+    ensure_parent(&output)?;
+    let source = check_compile::source_file(&script)?;
     match format {
         RenderFormat::Mp4 => {
-            let compilation = muse_ir::compile(&source, muse_types::RenderSettings::default());
-            let plan = compilation.plan.context("cannot render an invalid script")?;
-            muse_media::render_mp4(&plan, &args.output)?;
+            let plan = compile_with_project_settings(&script, args.project.as_deref())?;
+            let stamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
+            let wav = env::temp_dir().join(format!("muse-render-audio-{stamp}.wav"));
+            let score = muse_music::compose(&source)
+                .with_context(|| format!("cannot compose {}", script.display()))?;
+            muse_music::write_wav(&score, &wav)?;
+            muse_media::render_mp4_with(
+                &plan,
+                &output,
+                muse_media::Mp4Options {
+                    asset_root,
+                    audio_wav: Some(wav.clone()),
+                    max_duration_seconds: args.max_duration,
+                },
+            )?;
+            let _ = fs::remove_file(wav);
         }
         RenderFormat::Wav => {
             let score =
-                muse_music::compose(&source).with_context(|| format!("cannot compose {}", args.script.display()))?;
-            muse_music::write_wav(&score, &args.output)?;
+                muse_music::compose(&source).with_context(|| format!("cannot compose {}", script.display()))?;
+            muse_music::write_wav(&score, &output)?;
         }
         RenderFormat::Mp3 => {
             let score =
-                muse_music::compose(&source).with_context(|| format!("cannot compose {}", args.script.display()))?;
-            muse_music::write_mp3(&score, &args.output)?;
+                muse_music::compose(&source).with_context(|| format!("cannot compose {}", script.display()))?;
+            muse_music::write_mp3(&score, &output)?;
         }
     }
-    println!("rendered {}", args.output.display());
+    println!("rendered {}", output.display());
     Ok(())
+}
+
+fn resolve_render_target(args: &RenderArgs) -> Result<(PathBuf, PathBuf, PathBuf, RenderFormat)> {
+    if let Some(project) = args.project.as_deref() {
+        let manifest = muse_project::load_manifest(project)?;
+        let entry = muse_project::find_entry(&manifest, args.entry.as_deref())?;
+        let script = project.join(&entry.source);
+        let format = args
+            .format
+            .or_else(|| args.output.as_ref().and_then(|path| format_from_path(path).ok()))
+            .unwrap_or(RenderFormat::Mp4);
+        let output = if let Some(path) = &args.output {
+            path.clone()
+        } else if let Some(id) = &args.output_id {
+            let spec = entry
+                .outputs
+                .iter()
+                .find(|output| output.id == *id)
+                .with_context(|| format!("unknown output id `{id}` on entry `{}`", entry.id))?;
+            project.join(&spec.path)
+        } else {
+            let kind = match format {
+                RenderFormat::Mp4 => muse_project::OutputKind::Video,
+                RenderFormat::Wav | RenderFormat::Mp3 => muse_project::OutputKind::Audio,
+            };
+            entry
+                .outputs
+                .iter()
+                .find(|output| output.kind == kind)
+                .map(|output| project.join(&output.path))
+                .unwrap_or_else(|| {
+                    let ext = match format {
+                        RenderFormat::Mp4 => "mp4",
+                        RenderFormat::Wav => "wav",
+                        RenderFormat::Mp3 => "mp3",
+                    };
+                    project
+                        .join("library")
+                        .join(&entry.id)
+                        .join(format!("out.{ext}"))
+                })
+        };
+        return Ok((script, output, project.to_path_buf(), format));
+    }
+    let script = args
+        .script
+        .clone()
+        .context("pass a script path or --project <dir>")?;
+    let output = args
+        .output
+        .clone()
+        .context("pass --output <path> when not using --project")?;
+    let format = match args.format {
+        Some(format) => format,
+        None => format_from_path(&output)?,
+    };
+    Ok((script.clone(), output, infer_asset_root(&script), format))
 }
 
 pub(crate) fn export(args: &ExportArgs) -> Result<()> {

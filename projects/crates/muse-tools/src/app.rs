@@ -93,13 +93,26 @@ pub(crate) enum EmitFormat {
 
 #[derive(Debug, Args)]
 pub(crate) struct RenderArgs {
-    pub(crate) script: PathBuf,
-    /// Target file to write.
+    /// Script to render when not using `--project`.
+    pub(crate) script: Option<PathBuf>,
+    /// Project root containing `muse.von`.
+    #[arg(long)]
+    pub(crate) project: Option<PathBuf>,
+    /// Entry id when rendering a project.
+    #[arg(long)]
+    pub(crate) entry: Option<String>,
+    /// Output id from `muse.von` when using `--project` (defaults to first video/audio matching format).
+    #[arg(long)]
+    pub(crate) output_id: Option<String>,
+    /// Target file to write. Optional when `--project` declares a matching output path.
     #[arg(short, long)]
-    pub(crate) output: PathBuf,
+    pub(crate) output: Option<PathBuf>,
     /// Output format. Defaults to the output path extension.
     #[arg(long, value_enum)]
     pub(crate) format: Option<RenderFormat>,
+    /// Optional hard cap on MP4 duration seconds (smoke / partial renders).
+    #[arg(long)]
+    pub(crate) max_duration: Option<f64>,
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
