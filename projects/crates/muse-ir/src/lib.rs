@@ -82,7 +82,7 @@ pub struct VisualLayer {
     pub pulse: Option<f32>,
     /// Procedural stamp/slam FX strength in `[0, 1]` (`fx stamp`).
     pub stamp: Option<f32>,
-    /// Optional stamp glyph label (intent for future font; geometry for now).
+    /// Optional stamp glyph label (`fx stamp "字"`); rasterized via system font in muse-media.
     pub stamp_label: Option<String>,
 }
 #[derive(Debug, Clone, Serialize)]

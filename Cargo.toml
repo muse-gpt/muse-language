@@ -33,6 +33,7 @@ thiserror = "2.0"
 toml = "0.8"
 symphonia = { version = "0.6", default-features = false, features = ["aac", "flac", "isomp4", "mp3", "wav"] }
 ttf-parser = "0.25"
+ab_glyph = "0.2"
 
 wgpu = "25"
 pollster = "0.4"

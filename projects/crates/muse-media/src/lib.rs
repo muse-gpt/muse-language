@@ -1,6 +1,7 @@
 //! Render backends and preview output for Muse.
 mod backend;
 mod compose;
+mod font_stamp;
 pub mod gpu;
 mod lut;
 mod preview;

@@ -150,8 +150,12 @@ fn compose_frame_cpu(
     if let Some(strength) = layers_pulse(&layers) {
         apply_pulse_rgb(&mut canvas, strength, plan.shot_progress_normalized(t));
     }
-    if let Some(strength) = layers_stamp(&layers) {
-        apply_stamp_rgb(&mut canvas, strength, plan.shot_progress_normalized(t));
+    let progress = plan.shot_progress_normalized(t);
+    if let Some((strength, label)) = layers_stamp(&layers) {
+        apply_stamp_rgb(&mut canvas, strength, progress);
+        if let Some(label) = label.as_deref() {
+            crate::font_stamp::draw_stamp_label(&mut canvas, label, strength, progress);
+        }
     }
     if let Some(strength) = layers_bloom(&layers) {
         apply_bloom_rgb(&mut canvas, strength);
@@ -201,6 +205,14 @@ fn compose_frame_gpu(
         let p = rgba.get_pixel(x, y);
         Rgb([p[0], p[1], p[2]])
     });
+    // Geometry stamp stays on GPU; glyph label is CPU-rasterized over the frame.
+    let progress = plan.shot_progress_normalized(t);
+    let layer_refs: Vec<_> = layers.iter().collect();
+    if let Some((strength, label)) = layers_stamp(&layer_refs) {
+        if let Some(label) = label.as_deref() {
+            crate::font_stamp::draw_stamp_label(&mut canvas, label, strength, progress);
+        }
+    }
     paint_progress_cue(&mut canvas, t);
     Ok(canvas)
 }
@@ -296,8 +308,11 @@ fn layers_pulse(layers: &[&muse_ir::VisualLayer]) -> Option<f32> {
     layers.iter().rev().find_map(|layer| layer.pulse)
 }
 
-fn layers_stamp(layers: &[&muse_ir::VisualLayer]) -> Option<f32> {
-    layers.iter().rev().find_map(|layer| layer.stamp)
+fn layers_stamp(layers: &[&muse_ir::VisualLayer]) -> Option<(f32, Option<String>)> {
+    layers
+        .iter()
+        .rev()
+        .find_map(|layer| layer.stamp.map(|strength| (strength, layer.stamp_label.clone())))
 }
 
 fn layers_bloom(layers: &[&muse_ir::VisualLayer]) -> Option<f32> {
@@ -339,7 +354,7 @@ fn apply_pulse_rgb(canvas: &mut RgbImage, strength: f32, shot_progress: f32) {
     }
 }
 
-/// Geometric stamp/slam block (placeholder for kanji FX; not a lyric layer).
+/// Geometric stamp/slam block under the glyph label (shot FX, not a lyric layer).
 fn apply_stamp_rgb(canvas: &mut RgbImage, strength: f32, shot_progress: f32) {
     let strength = strength.clamp(0.0, 1.0);
     if strength <= 0.0 {
