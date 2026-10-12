@@ -232,9 +232,9 @@ function publishNative(version, artifactsRoot) {
             description:
                 rawPkg.description ??
                 `Prebuilt Muse CLI binary for ${plat.short} (optional dependency of @muse-gpt/muse)`,
-            type: "module",
             license: "MPL-2.0",
             main: "./index.js",
+            exports: { ".": "./index.js" },
             files: ["index.js", "lib", "readme.md"],
             os: plat.os,
             cpu: plat.cpu,

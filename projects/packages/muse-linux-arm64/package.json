@@ -2,9 +2,11 @@
     "name": "@muse-gpt/muse-linux-arm64",
     "version": "0.0.1",
     "description": "Prebuilt Muse CLI binary for Linux arm64 (optional dependency of @muse-gpt/muse)",
-    "type": "module",
     "license": "MPL-2.0",
     "main": "./index.js",
+    "exports": {
+        ".": "./index.js"
+    },
     "files": ["index.js", "lib", "readme.md"],
     "os": ["linux"],
     "cpu": ["arm64"],
