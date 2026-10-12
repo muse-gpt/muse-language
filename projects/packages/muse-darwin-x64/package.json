@@ -1,13 +1,21 @@
-﻿{
+{
     "name": "@muse/muse-darwin-x64",
-    "version": "0.0.1",
+    "version": "0.0.0",
     "description": "Muse native binary for macOS x64",
     "type": "module",
     "license": "MPL-2.0",
     "main": "./index.js",
-    "files": ["index.js", "lib", "readme.md"],
-    "os": ["darwin"],
-    "cpu": ["x64"],
+    "files": [
+        "index.js",
+        "lib",
+        "readme.md"
+    ],
+    "os": [
+        "darwin"
+    ],
+    "cpu": [
+        "x64"
+    ],
     "publishConfig": {
         "access": "public"
     }

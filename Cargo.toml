@@ -4,7 +4,7 @@ members = ["projects/crates/*"]
 default-members = ["projects/crates/muse-tools"]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.0.0"
 edition = "2024"
 license = "MPL-2.0"
 authors = ["Muse contributors"]

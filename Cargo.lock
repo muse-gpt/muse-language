@@ -806,7 +806,7 @@ dependencies = [
 
 [[package]]
 name = "muse-ir"
-version = "0.1.0"
+version = "0.0.0"
 dependencies = [
  "muse-parser",
  "muse-types",
@@ -816,7 +816,7 @@ dependencies = [
 
 [[package]]
 name = "muse-mcp"
-version = "0.1.0"
+version = "0.0.0"
 dependencies = [
  "anyhow",
  "muse-ir",
@@ -831,7 +831,7 @@ dependencies = [
 
 [[package]]
 name = "muse-media"
-version = "0.1.0"
+version = "0.0.0"
 dependencies = [
  "anyhow",
  "image",
@@ -842,7 +842,7 @@ dependencies = [
 
 [[package]]
 name = "muse-music"
-version = "0.1.0"
+version = "0.0.0"
 dependencies = [
  "anyhow",
  "hound",
@@ -858,7 +858,7 @@ dependencies = [
 
 [[package]]
 name = "muse-parser"
-version = "0.1.0"
+version = "0.0.0"
 dependencies = [
  "chumsky",
  "logos",
@@ -870,7 +870,7 @@ dependencies = [
 
 [[package]]
 name = "muse-project"
-version = "0.1.0"
+version = "0.0.0"
 dependencies = [
  "anyhow",
  "muse-types",
@@ -883,7 +883,7 @@ dependencies = [
 
 [[package]]
 name = "muse-score"
-version = "0.1.0"
+version = "0.0.0"
 dependencies = [
  "anyhow",
  "muse-music",
@@ -892,7 +892,7 @@ dependencies = [
 
 [[package]]
 name = "muse-tools"
-version = "0.1.0"
+version = "0.0.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -909,7 +909,7 @@ dependencies = [
 
 [[package]]
 name = "muse-types"
-version = "0.1.0"
+version = "0.0.0"
 dependencies = [
  "miette",
  "schemars",

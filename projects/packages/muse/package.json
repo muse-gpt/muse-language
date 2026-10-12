@@ -1,6 +1,6 @@
 {
     "name": "@muse/muse",
-    "version": "0.0.1",
+    "version": "0.0.0",
     "description": "Muse audiovisual composition language — CLI and Node entry",
     "type": "module",
     "license": "MPL-2.0",

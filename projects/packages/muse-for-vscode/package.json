@@ -2,7 +2,7 @@
     "name": "muse-language",
     "displayName": "Muse Language",
     "description": "Syntax highlighting for Muse (.muse) audiovisual composition scripts",
-    "version": "0.0.1",
+    "version": "0.0.0",
     "publisher": "muse",
     "license": "MPL-2.0",
     "engines": {
@@ -19,8 +19,13 @@
         "languages": [
             {
                 "id": "muse",
-                "aliases": ["Muse", "muse"],
-                "extensions": [".muse"],
+                "aliases": [
+                    "Muse",
+                    "muse"
+                ],
+                "extensions": [
+                    ".muse"
+                ],
                 "configuration": "./language-configuration.json"
             }
         ],

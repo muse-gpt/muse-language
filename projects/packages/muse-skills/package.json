@@ -1,11 +1,11 @@
 {
     "name": "@muse/muse-skills",
-    "version": "0.0.1",
+    "version": "0.0.0",
     "type": "module",
     "description": "Agent skills for Muse creators. Install with npx @muse/muse-skills.",
     "repository": {
         "type": "git",
-        "url": "https://github.com/muse-gpt/muse-language.git",
+        "url": "git+https://github.com/muse-gpt/muse-language.git",
         "directory": "projects/packages/muse-skills"
     },
     "homepage": "https://github.com/muse-gpt/muse-language/tree/dev/projects/packages/muse-skills",
