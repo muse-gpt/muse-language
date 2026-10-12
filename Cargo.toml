@@ -34,6 +34,10 @@ toml = "0.8"
 symphonia = { version = "0.6", default-features = false, features = ["aac", "flac", "isomp4", "mp3", "wav"] }
 ttf-parser = "0.25"
 
+wgpu = "25"
+pollster = "0.4"
+bytemuck = { version = "1.22", features = ["derive"] }
+
 muse-types = { path = "projects/crates/muse-types" }
 muse-parser = { path = "projects/crates/muse-parser" }
 muse-ir = { path = "projects/crates/muse-ir" }

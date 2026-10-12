@@ -1,11 +1,14 @@
 //! Deterministic frame composition from a [`RenderPlan`].
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use image::{Rgb, RgbImage, imageops};
 use muse_ir::RenderPlan;
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
+    sync::OnceLock,
 };
+
+use crate::gpu::{CompositorPreference, compositor_preference};
 
 #[derive(Debug, Clone)]
 pub struct ComposeOptions {
@@ -49,7 +52,31 @@ fn parse_hex_color(raw: &str) -> Option<(u8, u8, u8)> {
 }
 
 /// Paint one frame at normalized time `t` in `[0, 1]` across the plan duration.
+///
+/// Prefers the GPU compositor when available (`MUSE_COMPOSITOR=auto|gpu`).
+/// Forced GPU (`MUSE_COMPOSITOR=gpu`) fails explicitly if the backend cannot init.
 pub fn compose_frame(
+    plan: &RenderPlan,
+    width: u32,
+    height: u32,
+    t: f32,
+    options: &ComposeOptions,
+    cache: &mut HashMap<String, RgbImage>,
+) -> Result<RgbImage> {
+    match compositor_preference() {
+        CompositorPreference::Cpu => compose_frame_cpu(plan, width, height, t, options, cache),
+        CompositorPreference::Gpu => {
+            compose_frame_gpu(plan, width, height, t, options)
+                .context("GPU compositor required (MUSE_COMPOSITOR=gpu)")
+        }
+        CompositorPreference::Auto => match compose_frame_gpu(plan, width, height, t, options) {
+            Ok(image) => Ok(image),
+            Err(_) => compose_frame_cpu(plan, width, height, t, options, cache),
+        },
+    }
+}
+
+fn compose_frame_cpu(
     plan: &RenderPlan,
     width: u32,
     height: u32,
@@ -68,13 +95,61 @@ pub fn compose_frame(
         let plate = load_image(uri, options, cache)?;
         blit_cover(&mut canvas, &plate);
     }
-    // Progress cue so solid / static plates still show motion in short previews.
+    paint_progress_cue(&mut canvas, t);
+    Ok(canvas)
+}
+
+#[cfg(feature = "gpu")]
+fn compose_frame_gpu(
+    plan: &RenderPlan,
+    width: u32,
+    height: u32,
+    t: f32,
+    options: &ComposeOptions,
+) -> Result<RgbImage> {
+    use crate::gpu::{GpuComposeOptions, GpuCompositor};
+
+    static GPU: OnceLock<Result<GpuCompositor, String>> = OnceLock::new();
+    let compositor = match GPU.get_or_init(|| GpuCompositor::new().map_err(|e| e.to_string())) {
+        Ok(gpu) => gpu,
+        Err(message) => bail!("{message}"),
+    };
+
+    let rgba = compositor.compose_layers(
+        &plan.visuals,
+        &GpuComposeOptions {
+            width,
+            height,
+            asset_root: options.asset_root.clone(),
+        },
+    )?;
+    let mut canvas = RgbImage::from_fn(width, height, |x, y| {
+        let p = rgba.get_pixel(x, y);
+        Rgb([p[0], p[1], p[2]])
+    });
+    paint_progress_cue(&mut canvas, t);
+    Ok(canvas)
+}
+
+#[cfg(not(feature = "gpu"))]
+fn compose_frame_gpu(
+    _plan: &RenderPlan,
+    _width: u32,
+    _height: u32,
+    _t: f32,
+    _options: &ComposeOptions,
+) -> Result<RgbImage> {
+    bail!("muse-media built without `gpu` feature")
+}
+
+fn paint_progress_cue(canvas: &mut RgbImage, t: f32) {
+    let width = canvas.width();
+    let height = canvas.height();
     let progress_x =
         ((t.clamp(0.0, 1.0) * (width.saturating_sub(1) as f32)) as u32).min(width.saturating_sub(1));
     for y in (height.saturating_sub(4))..height {
         canvas.put_pixel(progress_x, y, Rgb([220, 220, 220]));
     }
-    Ok(canvas)
 }
 
 fn load_image(
