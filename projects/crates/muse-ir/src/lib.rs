@@ -22,6 +22,7 @@ pub enum ShotTransition {
     Cut,
     Xfade,
     Flash,
+    Iris,
 }
 
 impl ShotTransition {
@@ -30,6 +31,7 @@ impl ShotTransition {
             Self::Cut => "cut",
             Self::Xfade => "xfade",
             Self::Flash => "flash",
+            Self::Iris => "iris",
         }
     }
 }
@@ -189,10 +191,11 @@ pub fn compile(source: &str, settings: RenderSettings) -> Compilation {
                                 "cut" | "" => ShotTransition::Cut,
                                 "xfade" => ShotTransition::Xfade,
                                 "flash" => ShotTransition::Flash,
+                                "iris" => ShotTransition::Iris,
                                 other => {
                                     diagnostics.push(Diagnostic::error(
                                         format!(
-                                            "unknown shot transition `{other}` (cut|xfade|flash)"
+                                            "unknown shot transition `{other}` (cut|xfade|flash|iris)"
                                         ),
                                         shot.span,
                                     ));
@@ -527,7 +530,7 @@ impl RenderPlan {
         (t.clamp(0.0, 1.0) as f64 * f64::from(end)) as f32
     }
 
-    /// Incoming transition state at `t`, if an xfade/flash window is active.
+    /// Incoming transition state at `t`, if an xfade/flash/iris window is active.
     pub fn transition_at_normalized(&self, t: f32) -> Option<TransitionState> {
         let shot = self.shot_at_normalized(t)?;
         if matches!(shot.transition, ShotTransition::Cut) || shot.transition_bars <= 0.0 {
@@ -695,6 +698,22 @@ mod tests {
         let edge = 4.1 / 16.0;
         let tr = plan.transition_at_normalized(edge as f32).expect("xfade");
         assert!(tr.mix > 0.0 && tr.mix < 1.0);
+    }
+
+    #[test]
+    fn captures_iris_transition() {
+        let c = compile(
+            "timeline { act main : 0..16 shot s01 : 0..8 scene a shot s02 : 8..16 scene b iris 0.75 }",
+            RenderSettings::default(),
+        );
+        let plan = c.plan.expect("valid iris");
+        assert_eq!(plan.shots[1].transition, ShotTransition::Iris);
+        assert_eq!(plan.shots[1].transition_bars, 0.75);
+        let edge = 8.2 / 16.0;
+        let tr = plan.transition_at_normalized(edge as f32).expect("iris");
+        assert_eq!(tr.kind, ShotTransition::Iris);
+        assert!(tr.mix > 0.0 && tr.mix < 1.0);
+        assert_eq!(tr.flash, 0.0);
     }
 
     #[test]

@@ -1,7 +1,7 @@
 //! Deterministic frame composition from a [`RenderPlan`].
 use anyhow::{Context, Result, bail};
 use image::{Rgb, RgbImage, imageops};
-use muse_ir::RenderPlan;
+use muse_ir::{RenderPlan, ShotTransition};
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
@@ -55,7 +55,7 @@ fn parse_hex_color(raw: &str) -> Option<(u8, u8, u8)> {
 ///
 /// Prefers the GPU compositor when available (`MUSE_COMPOSITOR=auto|gpu`).
 /// Forced GPU (`MUSE_COMPOSITOR=gpu`) fails explicitly if the backend cannot init.
-/// Incoming shot `xfade` / `flash` blend previous and current looks when active.
+/// Incoming shot `xfade` / `flash` / `iris` blend previous and current looks when active.
 pub fn compose_frame(
     plan: &RenderPlan,
     width: u32,
@@ -67,7 +67,10 @@ pub fn compose_frame(
     if let Some(tr) = plan.transition_at_normalized(t) {
         let from = compose_frame_plain(plan, width, height, tr.from_t, options, cache)?;
         let to = compose_frame_plain(plan, width, height, t, options, cache)?;
-        let mut blended = lerp_rgb(&from, &to, tr.mix);
+        let mut blended = match tr.kind {
+            ShotTransition::Iris => iris_blend_rgb(&from, &to, tr.mix),
+            _ => lerp_rgb(&from, &to, tr.mix),
+        };
         if tr.flash > 0.0 {
             apply_flash_rgb(&mut blended, tr.flash);
         }
@@ -108,6 +111,34 @@ fn lerp_rgb(a: &RgbImage, b: &RgbImage, mix: f32) -> RgbImage {
             ((pa[0] as f32 * (1.0 - mix) + pb[0] as f32 * mix).round() as u8),
             ((pa[1] as f32 * (1.0 - mix) + pb[1] as f32 * mix).round() as u8),
             ((pa[2] as f32 * (1.0 - mix) + pb[2] as f32 * mix).round() as u8),
+        ])
+    })
+}
+
+/// Circular iris wipe: current look opens from center over previous look.
+fn iris_blend_rgb(from: &RgbImage, to: &RgbImage, mix: f32) -> RgbImage {
+    let mix = mix.clamp(0.0, 1.0);
+    let width = from.width().min(to.width());
+    let height = from.height().min(to.height());
+    let cx = width as f32 * 0.5;
+    let cy = height as f32 * 0.5;
+    let max_r = (cx * cx + cy * cy).sqrt().max(1.0);
+    let open = max_r * (mix * mix * (3.0 - 2.0 * mix));
+    let feather = (max_r * 0.05).max(1.5);
+    RgbImage::from_fn(width, height, |x, y| {
+        let dx = x as f32 + 0.5 - cx;
+        let dy = y as f32 + 0.5 - cy;
+        let d = (dx * dx + dy * dy).sqrt();
+        let t = (1.0
+            - ((d - (open - feather)) / (2.0 * feather)).clamp(0.0, 1.0))
+            .clamp(0.0, 1.0);
+        let mask = t * t * (3.0 - 2.0 * t);
+        let pa = from.get_pixel(x, y);
+        let pb = to.get_pixel(x, y);
+        Rgb([
+            ((pa[0] as f32 * (1.0 - mask) + pb[0] as f32 * mask).round() as u8),
+            ((pa[1] as f32 * (1.0 - mask) + pb[1] as f32 * mask).round() as u8),
+            ((pa[2] as f32 * (1.0 - mask) + pb[2] as f32 * mask).round() as u8),
         ])
     })
 }

@@ -563,7 +563,7 @@ fn parse_timeline_body(body: &str, span: Span) -> (Vec<ActDecl>, Vec<ShotDecl>) 
     (acts, shots)
 }
 
-/// `shot id : start..end scene name [for act] [cut|xfade|flash [bars]]` starting at `words[0]`.
+/// `shot id : start..end scene name [for act] [cut|xfade|flash|iris [bars]]` starting at `words[0]`.
 fn parse_shot_at(words: &[&str], span: Span) -> Option<(ShotDecl, usize)> {
     if words.len() < 6 || words[0] != "shot" || words[2] != ":" || words[4] != "scene" {
         return None;
@@ -589,26 +589,18 @@ fn parse_shot_at(words: &[&str], span: Span) -> Option<(ShotDecl, usize)> {
             "cut" => {
                 index += 1;
             }
-            kind @ ("xfade" | "flash") => {
+            kind @ ("xfade" | "flash" | "iris") => {
                 transition = kind.to_owned();
                 index += 1;
-                if index < words.len() {
-                    if words[index].parse::<f32>().is_ok() {
-                        transition_bars = words[index].to_owned();
-                        index += 1;
-                    } else {
-                        transition_bars = if kind == "flash" {
-                            "0.25".into()
-                        } else {
-                            "0.5".into()
-                        };
-                    }
+                let default_bars = match kind {
+                    "flash" => "0.25",
+                    _ => "0.5",
+                };
+                if index < words.len() && words[index].parse::<f32>().is_ok() {
+                    transition_bars = words[index].to_owned();
+                    index += 1;
                 } else {
-                    transition_bars = if kind == "flash" {
-                        "0.25".into()
-                    } else {
-                        "0.5".into()
-                    };
+                    transition_bars = default_bars.into();
                 }
             }
             _ => {}
