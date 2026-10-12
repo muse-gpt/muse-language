@@ -95,6 +95,9 @@ fn compose_frame_cpu(
         let plate = load_image(uri, options, cache)?;
         blit_cover(&mut canvas, &plate);
     }
+    if let Some(strength) = plan_bloom(plan) {
+        apply_bloom_rgb(&mut canvas, strength);
+    }
     if let Some(strength) = plan_vignette(plan) {
         apply_vignette_rgb(&mut canvas, strength);
     }
@@ -192,6 +195,45 @@ pub fn plan_vignette(plan: &RenderPlan) -> Option<f32> {
 /// Last declared grain strength on the plan, if any.
 pub fn plan_grain(plan: &RenderPlan) -> Option<f32> {
     plan.visuals.iter().rev().find_map(|layer| layer.grain)
+}
+
+/// Last declared bloom strength on the plan, if any.
+pub fn plan_bloom(plan: &RenderPlan) -> Option<f32> {
+    plan.visuals.iter().rev().find_map(|layer| layer.bloom)
+}
+
+/// Soft highlight bloom matching the GPU 5×5 threshold blur.
+fn apply_bloom_rgb(canvas: &mut RgbImage, strength: f32) {
+    let strength = strength.clamp(0.0, 1.0);
+    if strength <= 0.0 {
+        return;
+    }
+    let width = canvas.width();
+    let height = canvas.height();
+    let src = canvas.clone();
+    let threshold = 0.62_f32;
+    for y in 0..height {
+        for x in 0..width {
+            let mut acc = [0.0_f32; 3];
+            for oy in -2i32..=2 {
+                for ox in -2i32..=2 {
+                    let sx = (x as i32 + ox * 2).clamp(0, width as i32 - 1) as u32;
+                    let sy = (y as i32 + oy * 2).clamp(0, height as i32 - 1) as u32;
+                    let p = src.get_pixel(sx, sy);
+                    for c in 0..3 {
+                        let v = p[c] as f32 / 255.0;
+                        acc[c] += (v - threshold).max(0.0);
+                    }
+                }
+            }
+            let p = canvas.get_pixel_mut(x, y);
+            for c in 0..3 {
+                let add = (acc[c] / 25.0) * strength * 2.5;
+                let v = (p[c] as f32 / 255.0 + add).clamp(0.0, 1.0);
+                p[c] = (v * 255.0).round() as u8;
+            }
+        }
+    }
 }
 
 /// Radial edge darken matching the GPU vignette pass (`smoothstep(0.25, 0.95, d)`).

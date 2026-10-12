@@ -1,4 +1,4 @@
-//! wgpu frame compositor: clear + cover-blit + optional post (vignette/grain) -> RGBA8 readback.
+//! wgpu frame compositor: clear + cover-blit + optional post (bloom/vignette/grain) -> RGBA8 readback.
 
 use anyhow::{Context, Result, bail};
 use image::RgbaImage;
@@ -241,6 +241,7 @@ impl GpuCompositor {
         };
         let mut vignette_strength = 0.0_f32;
         let mut grain_strength = 0.0_f32;
+        let mut bloom_strength = 0.0_f32;
         let mut image_draws: Vec<(RgbaImage, CoverUv)> = Vec::new();
 
         for layer in layers {
@@ -252,6 +253,9 @@ impl GpuCompositor {
             }
             if let Some(strength) = layer.grain {
                 grain_strength = strength.clamp(0.0, 1.0);
+            }
+            if let Some(strength) = layer.bloom {
+                bloom_strength = strength.clamp(0.0, 1.0);
             }
             for uri in &layer.images {
                 let path = resolve_asset(uri, &options.asset_root);
@@ -319,7 +323,7 @@ impl GpuCompositor {
         }
 
         let mut post_keep: Option<(wgpu::Texture, wgpu::Buffer, wgpu::BindGroup)> = None;
-        if vignette_strength > 0.0 || grain_strength > 0.0 {
+        if vignette_strength > 0.0 || grain_strength > 0.0 || bloom_strength > 0.0 {
             let post = self.device.create_texture(&wgpu::TextureDescriptor {
                 label: Some("muse-frame-post"),
                 size: wgpu::Extent3d {
@@ -338,8 +342,8 @@ impl GpuCompositor {
             let uniforms = PostUniforms {
                 vignette: vignette_strength,
                 grain: grain_strength,
+                bloom: bloom_strength,
                 time: options.time.clamp(0.0, 1.0),
-                _pad: 0.0,
             };
             let uniform_buf = self.device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("muse-post-uniform"),
@@ -546,8 +550,8 @@ struct CoverUniforms {
 struct PostUniforms {
     vignette: f32,
     grain: f32,
+    bloom: f32,
     time: f32,
-    _pad: f32,
 }
 
 #[derive(Clone, Copy)]
@@ -657,8 +661,8 @@ const POST_WGSL: &str = r#"
 struct Post {
     vignette: f32,
     grain: f32,
+    bloom: f32,
     time: f32,
-    _pad: f32,
 };
 
 @group(0) @binding(0) var src_tex: texture_2d<f32>;
@@ -674,6 +678,23 @@ fn hash21(p: vec2<f32>) -> f32 {
     var p3 = fract(vec3<f32>(p.xyx) * 0.1031);
     p3 += dot(p3, p3.yzx + 33.33);
     return fract((p3.x + p3.y) * p3.z);
+}
+
+fn soft_bloom(uv: vec2<f32>) -> vec3<f32> {
+    let dims = vec2<f32>(textureDimensions(src_tex));
+    let px = (1.0 / dims) * 2.5;
+    var acc = vec3<f32>(0.0);
+    for (var oy = -2; oy <= 2; oy++) {
+        for (var ox = -2; ox <= 2; ox++) {
+            let s = textureSample(
+                src_tex,
+                src_samp,
+                uv + vec2<f32>(f32(ox), f32(oy)) * px,
+            ).rgb;
+            acc += max(s - vec3<f32>(0.62), vec3<f32>(0.0));
+        }
+    }
+    return acc / 25.0;
 }
 
 @vertex
@@ -703,6 +724,7 @@ fn vs_main(@builtin(vertex_index) idx: u32) -> VsOut {
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     var color = textureSample(src_tex, src_samp, in.uv).rgb;
+    color += soft_bloom(in.uv) * post.bloom * 2.5;
     let d = distance(in.uv, vec2<f32>(0.5, 0.5)) * 1.41421356;
     let edge = smoothstep(0.25, 0.95, d);
     color *= 1.0 - post.vignette * edge;
