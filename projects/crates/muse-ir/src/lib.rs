@@ -56,6 +56,8 @@ pub struct VisualLayer {
     pub lut: Option<String>,
     /// LUT mix amount in `[0, 1]` (ignored when `lut` is absent).
     pub lut_mix: Option<f32>,
+    /// Procedural center pulse FX strength in `[0, 1]` (`fx pulse`).
+    pub pulse: Option<f32>,
 }
 #[derive(Debug, Clone, Serialize)]
 pub struct RenderPlan {
@@ -201,6 +203,7 @@ pub fn compile(source: &str, settings: RenderSettings) -> Compilation {
                     let mut bloom = None;
                     let mut lut = None;
                     let mut lut_mix = None;
+                    let mut pulse = None;
                     if let BlockContent::Visual { elements } = &block.content {
                         visuals += elements.len().max(1);
                         for element in elements {
@@ -252,6 +255,22 @@ pub fn compile(source: &str, settings: RenderSettings) -> Compilation {
                                             .push(Diagnostic::error(format!("lut mix {message}"), *span)),
                                     }
                                 }
+                                VisualDecl::Fx { kind, strength, span } => {
+                                    let kind = kind.trim().to_ascii_lowercase();
+                                    match kind.as_str() {
+                                        "pulse" => match parse_unit_strength(strength) {
+                                            Ok(value) => pulse = Some(value),
+                                            Err(message) => diagnostics.push(Diagnostic::error(
+                                                format!("fx pulse {message}"),
+                                                *span,
+                                            )),
+                                        },
+                                        other => diagnostics.push(Diagnostic::error(
+                                            format!("unknown fx `{other}` (supported: pulse)"),
+                                            *span,
+                                        )),
+                                    }
+                                }
                                 _ => {}
                             }
                         }
@@ -276,6 +295,7 @@ pub fn compile(source: &str, settings: RenderSettings) -> Compilation {
                         bloom,
                         lut,
                         lut_mix,
+                        pulse,
                     });
                 }
                 BlockKind::Orchestrate => {
@@ -395,6 +415,21 @@ impl RenderPlan {
             layers
         }
     }
+
+    /// Progress within the active shot in `[0, 1]`, or global `t` when no shot.
+    pub fn shot_progress_normalized(&self, t: f32) -> f32 {
+        let t = t.clamp(0.0, 1.0);
+        let Some(shot) = self.shot_at_normalized(t) else {
+            return t;
+        };
+        let end = self.end_bar();
+        if end == 0 || shot.end_bar <= shot.start_bar {
+            return 0.0;
+        }
+        let bar = f64::from(t) * f64::from(end);
+        let span = f64::from(shot.end_bar - shot.start_bar);
+        (((bar - f64::from(shot.start_bar)) / span) as f32).clamp(0.0, 1.0)
+    }
 }
 
 #[cfg(test)]
@@ -477,6 +512,17 @@ mod tests {
         let plan = c.plan.expect("valid visual");
         assert_eq!(plan.visuals[0].lut.as_deref(), Some("P2"));
         assert_eq!(plan.visuals[0].lut_mix, Some(0.25));
+    }
+
+    #[test]
+    fn captures_fx_pulse() {
+        let c = compile(
+            r##"timeline { act main : 0..8 shot s01 : 0..4 scene ember } visual for main scene ember { fx pulse 0.8 }"##,
+            RenderSettings::default(),
+        );
+        let plan = c.plan.expect("valid fx");
+        assert_eq!(plan.visuals[0].pulse, Some(0.8));
+        assert!((plan.shot_progress_normalized(0.125) - 0.25).abs() < 0.02);
     }
 
     #[test]

@@ -486,6 +486,7 @@ fn parse_visual_elements(body: &str, body_span: Span) -> Vec<VisualDecl> {
                 || after_name.starts_with("grain")
                 || after_name.starts_with("bloom")
                 || after_name.starts_with("lut")
+                || after_name.starts_with("fx")
             {
                 ("1.0".to_owned(), after_name)
             } else {
@@ -494,6 +495,18 @@ fn parse_visual_elements(body: &str, body_span: Span) -> Vec<VisualDecl> {
             elements.push(VisualDecl::Lut {
                 name,
                 mix,
+                span: body_span,
+            });
+            rest = next;
+            continue;
+        }
+        if let Some(after) = trimmed.strip_prefix("fx") {
+            let after = after.trim_start();
+            let (kind, after_kind) = take_visual_token(after);
+            let (strength, next) = take_visual_value(after_kind);
+            elements.push(VisualDecl::Fx {
+                kind,
+                strength,
                 span: body_span,
             });
             rest = next;

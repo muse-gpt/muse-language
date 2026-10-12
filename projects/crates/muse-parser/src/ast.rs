@@ -145,6 +145,12 @@ pub enum VisualDecl {
         mix: String,
         span: Span,
     },
+    /// Shot FX: `fx pulse 0.8` (procedural; not a lyric layer).
+    Fx {
+        kind: String,
+        strength: String,
+        span: Span,
+    },
 }
 
 #[derive(Debug, Clone, Serialize)]
