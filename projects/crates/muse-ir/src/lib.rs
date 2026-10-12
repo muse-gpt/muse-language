@@ -39,6 +39,10 @@ pub struct VisualLayer {
     pub grain: Option<f32>,
     /// Optional soft bloom strength in `[0, 1]`.
     pub bloom: Option<f32>,
+    /// Built-in palette id (`P2`) or project-relative LUT PNG path.
+    pub lut: Option<String>,
+    /// LUT mix amount in `[0, 1]` (ignored when `lut` is absent).
+    pub lut_mix: Option<f32>,
 }
 #[derive(Debug, Clone, Serialize)]
 pub struct RenderPlan {
@@ -141,6 +145,8 @@ pub fn compile(source: &str, settings: RenderSettings) -> Compilation {
                     let mut vignette = None;
                     let mut grain = None;
                     let mut bloom = None;
+                    let mut lut = None;
+                    let mut lut_mix = None;
                     if let BlockContent::Visual { elements } = &block.content {
                         visuals += elements.len().max(1);
                         for element in elements {
@@ -176,6 +182,22 @@ pub fn compile(source: &str, settings: RenderSettings) -> Compilation {
                                             .push(Diagnostic::error(format!("bloom {message}"), *span)),
                                     }
                                 }
+                                VisualDecl::Lut { name, mix, span } => {
+                                    let name = name.trim().trim_matches('"').to_owned();
+                                    if name.is_empty() {
+                                        diagnostics.push(Diagnostic::error(
+                                            "lut name must be non-empty",
+                                            *span,
+                                        ));
+                                    } else {
+                                        lut = Some(name);
+                                    }
+                                    match parse_unit_strength(mix) {
+                                        Ok(value) => lut_mix = Some(value),
+                                        Err(message) => diagnostics
+                                            .push(Diagnostic::error(format!("lut mix {message}"), *span)),
+                                    }
+                                }
                                 _ => {}
                             }
                         }
@@ -197,6 +219,8 @@ pub fn compile(source: &str, settings: RenderSettings) -> Compilation {
                         vignette,
                         grain,
                         bloom,
+                        lut,
+                        lut_mix,
                     });
                 }
                 BlockKind::Orchestrate => {
@@ -337,5 +361,16 @@ mod tests {
         );
         let plan = c.plan.expect("valid visual");
         assert_eq!(plan.visuals[0].bloom, Some(0.3));
+    }
+
+    #[test]
+    fn captures_visual_lut() {
+        let c = compile(
+            r##"timeline { act main : 0..4 } visual for main { background color "#0b1524" lut P2 0.25 }"##,
+            RenderSettings::default(),
+        );
+        let plan = c.plan.expect("valid visual");
+        assert_eq!(plan.visuals[0].lut.as_deref(), Some("P2"));
+        assert_eq!(plan.visuals[0].lut_mix, Some(0.25));
     }
 }

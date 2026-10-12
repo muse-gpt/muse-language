@@ -467,6 +467,32 @@ fn parse_visual_elements(body: &str, body_span: Span) -> Vec<VisualDecl> {
             rest = next;
             continue;
         }
+        if let Some(after) = trimmed.strip_prefix("lut") {
+            let (name, after_name) = take_visual_value(after);
+            let after_name = after_name.trim_start();
+            let (mix, next) = if after_name.is_empty()
+                || after_name.starts_with("background")
+                || after_name.starts_with("image")
+                || after_name.starts_with("video")
+                || after_name.starts_with("camera")
+                || after_name.starts_with("particles")
+                || after_name.starts_with("vignette")
+                || after_name.starts_with("grain")
+                || after_name.starts_with("bloom")
+                || after_name.starts_with("lut")
+            {
+                ("1.0".to_owned(), after_name)
+            } else {
+                take_visual_value(after_name)
+            };
+            elements.push(VisualDecl::Lut {
+                name,
+                mix,
+                span: body_span,
+            });
+            rest = next;
+            continue;
+        }
         // Skip one grapheme cluster / char and keep scanning.
         let mut chars = trimmed.chars();
         chars.next();

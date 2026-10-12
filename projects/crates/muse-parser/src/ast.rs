@@ -123,6 +123,12 @@ pub enum VisualDecl {
         strength: String,
         span: Span,
     },
+    /// Gradient-map LUT id (`P2`) or PNG path, with mix in `[0, 1]`.
+    Lut {
+        name: String,
+        mix: String,
+        span: Span,
+    },
 }
 
 #[derive(Debug, Clone, Serialize)]

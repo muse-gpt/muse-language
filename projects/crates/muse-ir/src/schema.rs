@@ -35,6 +35,8 @@ pub struct IrVisualLayer {
     pub vignette: Option<f32>,
     pub grain: Option<f32>,
     pub bloom: Option<f32>,
+    pub lut: Option<String>,
+    pub lut_mix: Option<f32>,
 }
 #[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct CompilationDocument {
@@ -87,6 +89,8 @@ impl From<&VisualLayer> for IrVisualLayer {
             vignette: value.vignette,
             grain: value.grain,
             bloom: value.bloom,
+            lut: value.lut.clone(),
+            lut_mix: value.lut_mix,
         }
     }
 }
