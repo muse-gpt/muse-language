@@ -10,7 +10,7 @@ pub use backend::{
     find_ffmpeg, render_mp4, render_mp4_with,
 };
 pub use compose::{
-    ComposeOptions, compose_frame, plan_background_rgb, plan_has_images, plan_vignette,
+    ComposeOptions, compose_frame, plan_background_rgb, plan_grain, plan_has_images, plan_vignette,
 };
 pub use gpu::{
     CompositorKind, CompositorPreference, GpuBackendInfo, GpuStatus, compositor_preference,

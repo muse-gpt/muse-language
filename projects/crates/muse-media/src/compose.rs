@@ -98,6 +98,9 @@ fn compose_frame_cpu(
     if let Some(strength) = plan_vignette(plan) {
         apply_vignette_rgb(&mut canvas, strength);
     }
+    if let Some(strength) = plan_grain(plan) {
+        apply_grain_rgb(&mut canvas, strength, t);
+    }
     paint_progress_cue(&mut canvas, t);
     Ok(canvas)
 }
@@ -124,6 +127,7 @@ fn compose_frame_gpu(
             width,
             height,
             asset_root: options.asset_root.clone(),
+            time: t,
         },
     )?;
     let mut canvas = RgbImage::from_fn(width, height, |x, y| {
@@ -185,6 +189,11 @@ pub fn plan_vignette(plan: &RenderPlan) -> Option<f32> {
     plan.visuals.iter().rev().find_map(|layer| layer.vignette)
 }
 
+/// Last declared grain strength on the plan, if any.
+pub fn plan_grain(plan: &RenderPlan) -> Option<f32> {
+    plan.visuals.iter().rev().find_map(|layer| layer.grain)
+}
+
 /// Radial edge darken matching the GPU vignette pass (`smoothstep(0.25, 0.95, d)`).
 fn apply_vignette_rgb(canvas: &mut RgbImage, strength: f32) {
     let strength = strength.clamp(0.0, 1.0);
@@ -207,6 +216,44 @@ fn apply_vignette_rgb(canvas: &mut RgbImage, strength: f32) {
             p[2] = (p[2] as f32 * factor).round() as u8;
         }
     }
+}
+
+/// Deterministic film grain matching the GPU post pass.
+fn apply_grain_rgb(canvas: &mut RgbImage, strength: f32, time: f32) {
+    let strength = strength.clamp(0.0, 1.0);
+    if strength <= 0.0 {
+        return;
+    }
+    let time = time.clamp(0.0, 1.0);
+    let width = canvas.width();
+    let height = canvas.height();
+    for y in 0..height {
+        for x in 0..width {
+            let u = (x as f32 + 0.5) / width as f32;
+            let v = (y as f32 + 0.5) / height as f32;
+            let n = hash21(u * 1024.0 + time * 97.0, v * 1024.0 + time * 53.0) * 2.0 - 1.0;
+            let p = canvas.get_pixel_mut(x, y);
+            for c in 0..3 {
+                let v = (p[c] as f32 / 255.0 + n * strength).clamp(0.0, 1.0);
+                p[c] = (v * 255.0).round() as u8;
+            }
+        }
+    }
+}
+
+fn hash21(x: f32, y: f32) -> f32 {
+    let mut p3x = fract(x * 0.1031);
+    let mut p3y = fract(y * 0.1031);
+    let mut p3z = fract(x * 0.1031);
+    let d = p3x * (p3y + 33.33) + p3y * (p3z + 33.33) + p3z * (p3x + 33.33);
+    p3x = fract(p3x + d);
+    p3y = fract(p3y + d);
+    p3z = fract(p3z + d);
+    fract((p3x + p3y) * p3z)
+}
+
+fn fract(v: f32) -> f32 {
+    v - v.floor()
 }
 
 /// Cover-fit `src` onto `dst` (center-cropped), matching Unity/CSS `object-fit: cover`.
