@@ -29,7 +29,7 @@ jobs:
       sha: ${{ steps.bind.outputs.sha }}
       tag: ${{ steps.bind.outputs.tag }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -66,7 +66,7 @@ jobs:
             short: darwin-arm64
             exe: muse
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: refs/tags/${{ needs.provenance.outputs.tag }}
           fetch-depth: 0
@@ -103,7 +103,7 @@ jobs:
           cp "$src" "$out/${{ matrix.exe }}"
           ls -la "$out"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: native-${{ matrix.short }}
           path: dist/${{ matrix.short }}
@@ -115,7 +115,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: NPM_PUBLISH
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: refs/tags/${{ needs.provenance.outputs.tag }}
           fetch-depth: 0
@@ -131,11 +131,11 @@ jobs:
             exit 1
           fi
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: 9.15.0
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "24"
           package-manager-cache: false
@@ -145,7 +145,7 @@ jobs:
 
       - run: pnpm install
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: native-*
           path: dist/native-artifacts
