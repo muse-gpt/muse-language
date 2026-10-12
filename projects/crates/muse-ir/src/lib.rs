@@ -58,6 +58,10 @@ pub struct VisualLayer {
     pub lut_mix: Option<f32>,
     /// Procedural center pulse FX strength in `[0, 1]` (`fx pulse`).
     pub pulse: Option<f32>,
+    /// Procedural stamp/slam FX strength in `[0, 1]` (`fx stamp`).
+    pub stamp: Option<f32>,
+    /// Optional stamp glyph label (intent for future font; geometry for now).
+    pub stamp_label: Option<String>,
 }
 #[derive(Debug, Clone, Serialize)]
 pub struct RenderPlan {
@@ -204,6 +208,8 @@ pub fn compile(source: &str, settings: RenderSettings) -> Compilation {
                     let mut lut = None;
                     let mut lut_mix = None;
                     let mut pulse = None;
+                    let mut stamp = None;
+                    let mut stamp_label = None;
                     if let BlockContent::Visual { elements } = &block.content {
                         visuals += elements.len().max(1);
                         for element in elements {
@@ -255,7 +261,12 @@ pub fn compile(source: &str, settings: RenderSettings) -> Compilation {
                                             .push(Diagnostic::error(format!("lut mix {message}"), *span)),
                                     }
                                 }
-                                VisualDecl::Fx { kind, strength, span } => {
+                                VisualDecl::Fx {
+                                    kind,
+                                    label,
+                                    strength,
+                                    span,
+                                } => {
                                     let kind = kind.trim().to_ascii_lowercase();
                                     match kind.as_str() {
                                         "pulse" => match parse_unit_strength(strength) {
@@ -265,8 +276,26 @@ pub fn compile(source: &str, settings: RenderSettings) -> Compilation {
                                                 *span,
                                             )),
                                         },
+                                        "stamp" => match parse_unit_strength(strength) {
+                                            Ok(value) => {
+                                                stamp = Some(value);
+                                                if let Some(label) = label {
+                                                    let label =
+                                                        label.trim().trim_matches('"').to_owned();
+                                                    if !label.is_empty() {
+                                                        stamp_label = Some(label);
+                                                    }
+                                                }
+                                            }
+                                            Err(message) => diagnostics.push(Diagnostic::error(
+                                                format!("fx stamp {message}"),
+                                                *span,
+                                            )),
+                                        },
                                         other => diagnostics.push(Diagnostic::error(
-                                            format!("unknown fx `{other}` (supported: pulse)"),
+                                            format!(
+                                                "unknown fx `{other}` (supported: pulse, stamp)"
+                                            ),
                                             *span,
                                         )),
                                     }
@@ -296,6 +325,8 @@ pub fn compile(source: &str, settings: RenderSettings) -> Compilation {
                         lut,
                         lut_mix,
                         pulse,
+                        stamp,
+                        stamp_label,
                     });
                 }
                 BlockKind::Orchestrate => {
@@ -523,6 +554,17 @@ mod tests {
         let plan = c.plan.expect("valid fx");
         assert_eq!(plan.visuals[0].pulse, Some(0.8));
         assert!((plan.shot_progress_normalized(0.125) - 0.25).abs() < 0.02);
+    }
+
+    #[test]
+    fn captures_fx_stamp() {
+        let c = compile(
+            r##"timeline { act main : 0..8 shot s01 : 0..4 scene illust } visual for main scene illust { fx stamp "残" 0.9 }"##,
+            RenderSettings::default(),
+        );
+        let plan = c.plan.expect("valid stamp");
+        assert_eq!(plan.visuals[0].stamp, Some(0.9));
+        assert_eq!(plan.visuals[0].stamp_label.as_deref(), Some("残"));
     }
 
     #[test]

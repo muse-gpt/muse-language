@@ -503,9 +503,17 @@ fn parse_visual_elements(body: &str, body_span: Span) -> Vec<VisualDecl> {
         if let Some(after) = trimmed.strip_prefix("fx") {
             let after = after.trim_start();
             let (kind, after_kind) = take_visual_token(after);
-            let (strength, next) = take_visual_value(after_kind);
+            let after_kind = after_kind.trim_start();
+            let (label, after_label) = if after_kind.starts_with('"') {
+                let (label, rest) = take_visual_value(after_kind);
+                (Some(label), rest.trim_start())
+            } else {
+                (None, after_kind)
+            };
+            let (strength, next) = take_visual_value(after_label);
             elements.push(VisualDecl::Fx {
                 kind,
+                label,
                 strength,
                 span: body_span,
             });
