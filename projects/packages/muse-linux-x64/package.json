@@ -1,6 +1,6 @@
 {
     "name": "@muse-gpt/muse-linux-x64",
-    "version": "0.0.0",
+    "version": "0.0.1",
     "description": "Prebuilt Muse CLI binary for Linux x64 (optional dependency of @muse-gpt/muse)",
     "type": "module",
     "license": "MPL-2.0",

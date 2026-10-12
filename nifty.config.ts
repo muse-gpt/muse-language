@@ -1,6 +1,6 @@
 import { defineConfig } from "@doki-land/nifty";
 
-/** Placeholder / Trusted Publisher package set for Muse 0.0.0 name claim. */
+/** Placeholder / Trusted Publisher package set for Muse 0.0.1 Trusted Publisher set. */
 export default defineConfig({
     publish: {
         packages: [
