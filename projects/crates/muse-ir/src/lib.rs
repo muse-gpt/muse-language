@@ -31,6 +31,8 @@ pub struct OrchestrationRule {
 pub struct VisualLayer {
     pub target: Option<String>,
     pub background_color: Option<String>,
+    /// Image URIs declared as `image "..."` inside the visual block (project-relative).
+    pub images: Vec<String>,
 }
 #[derive(Debug, Clone, Serialize)]
 pub struct RenderPlan {
@@ -129,11 +131,22 @@ pub fn compile(source: &str, settings: RenderSettings) -> Compilation {
                 }
                 BlockKind::Visual => {
                     let mut background_color = None;
+                    let mut images = Vec::new();
                     if let BlockContent::Visual { elements } = &block.content {
                         visuals += elements.len().max(1);
                         for element in elements {
-                            if let VisualDecl::Background { color, .. } = element {
-                                background_color = Some(color.trim().trim_matches('"').to_owned());
+                            match element {
+                                VisualDecl::Background { color, .. } => {
+                                    background_color = Some(color.trim().trim_matches('"').to_owned());
+                                }
+                                VisualDecl::Asset {
+                                    kind: muse_parser::VisualAssetKind::Image,
+                                    uri,
+                                    ..
+                                } => {
+                                    images.push(uri.trim().trim_matches('"').to_owned());
+                                }
+                                _ => {}
                             }
                         }
                     } else {
@@ -150,6 +163,7 @@ pub fn compile(source: &str, settings: RenderSettings) -> Compilation {
                     visual_layers.push(VisualLayer {
                         target: block.target.clone(),
                         background_color,
+                        images,
                     });
                 }
                 BlockKind::Orchestrate => {
@@ -242,5 +256,15 @@ mod tests {
         let plan = c.plan.expect("valid visual");
         assert_eq!(plan.visuals.len(), 1);
         assert_eq!(plan.visuals[0].background_color.as_deref(), Some("#0b1524"));
+    }
+
+    #[test]
+    fn captures_visual_image_uris() {
+        let c = compile(
+            r##"timeline { act main : 0..4 } visual for main { background color "#000000" image "assets/textures/plate.png" }"##,
+            RenderSettings::default(),
+        );
+        let plan = c.plan.expect("valid visual");
+        assert_eq!(plan.visuals[0].images, ["assets/textures/plate.png"]);
     }
 }

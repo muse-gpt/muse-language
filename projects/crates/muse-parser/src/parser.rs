@@ -341,45 +341,7 @@ fn typed_content(source: &str, kind: BlockKind, body: &str, body_span: Span) -> 
             transition_strategy: body.contains("transition_strategy").then_some("declared".to_owned()),
         }),
         BlockKind::Visual => BlockContent::Visual {
-            elements: body
-                .lines()
-                .filter_map(|line| {
-                    let line = line.trim();
-                    if let Some(value) = line.strip_prefix("background color") {
-                        return Some(VisualDecl::Background {
-                            color: value.trim().trim_matches('"').to_owned(),
-                            span: body_span,
-                        });
-                    }
-                    if let Some(value) = line.strip_prefix("image") {
-                        return Some(VisualDecl::Asset {
-                            kind: VisualAssetKind::Image,
-                            uri: value.trim().trim_matches('"').to_owned(),
-                            span: body_span,
-                        });
-                    }
-                    if let Some(value) = line.strip_prefix("video") {
-                        return Some(VisualDecl::Asset {
-                            kind: VisualAssetKind::Video,
-                            uri: value.trim().trim_matches('"').to_owned(),
-                            span: body_span,
-                        });
-                    }
-                    if let Some(value) = line.strip_prefix("camera") {
-                        let (property, value) = value.trim().split_once(char::is_whitespace)?;
-                        return Some(VisualDecl::Camera {
-                            property: property.to_owned(),
-                            value: value.trim().to_owned(),
-                            span: body_span,
-                        });
-                    }
-                    line.strip_prefix("particles").map(|value| VisualDecl::Particles {
-                        property: "config".to_owned(),
-                        value: value.trim().to_owned(),
-                        span: body_span,
-                    })
-                })
-                .collect(),
+            elements: parse_visual_elements(body, body_span),
         },
         BlockKind::Music => BlockContent::Music(MusicDecl {
             key: quoted_after(body, "key"),
@@ -417,6 +379,93 @@ fn list_after(input: &str, marker: &str) -> Vec<String> {
         .and_then(|start| input[start..].find(']').map(|end| &input[start..start + end]))
         .map(quoted_values)
         .unwrap_or_default()
+}
+
+fn parse_visual_elements(body: &str, body_span: Span) -> Vec<VisualDecl> {
+    let mut elements = Vec::new();
+    let mut rest = body;
+    while !rest.is_empty() {
+        let trimmed = rest.trim_start();
+        if trimmed.is_empty() {
+            break;
+        }
+        if let Some(after) = trimmed.strip_prefix("background color") {
+            let (value, next) = take_visual_value(after);
+            elements.push(VisualDecl::Background {
+                color: value,
+                span: body_span,
+            });
+            rest = next;
+            continue;
+        }
+        if let Some(after) = trimmed.strip_prefix("image") {
+            let (value, next) = take_visual_value(after);
+            elements.push(VisualDecl::Asset {
+                kind: VisualAssetKind::Image,
+                uri: value,
+                span: body_span,
+            });
+            rest = next;
+            continue;
+        }
+        if let Some(after) = trimmed.strip_prefix("video") {
+            let (value, next) = take_visual_value(after);
+            elements.push(VisualDecl::Asset {
+                kind: VisualAssetKind::Video,
+                uri: value,
+                span: body_span,
+            });
+            rest = next;
+            continue;
+        }
+        if let Some(after) = trimmed.strip_prefix("camera") {
+            let after = after.trim_start();
+            let (property, after_prop) = take_visual_token(after);
+            let (value, next) = take_visual_value(after_prop);
+            elements.push(VisualDecl::Camera {
+                property,
+                value,
+                span: body_span,
+            });
+            rest = next;
+            continue;
+        }
+        if let Some(after) = trimmed.strip_prefix("particles") {
+            let (value, next) = take_visual_value(after);
+            elements.push(VisualDecl::Particles {
+                property: "config".to_owned(),
+                value,
+                span: body_span,
+            });
+            rest = next;
+            continue;
+        }
+        // Skip one grapheme cluster / char and keep scanning.
+        let mut chars = trimmed.chars();
+        chars.next();
+        rest = chars.as_str();
+    }
+    elements
+}
+
+fn take_visual_value(input: &str) -> (String, &str) {
+    let input = input.trim_start();
+    if let Some(rest) = input.strip_prefix('"') {
+        if let Some(end) = rest.find('"') {
+            return (rest[..end].to_owned(), &rest[end + 1..]);
+        }
+    }
+    take_visual_token(input)
+}
+
+fn take_visual_token(input: &str) -> (String, &str) {
+    let input = input.trim_start();
+    let end = input
+        .char_indices()
+        .find(|(_, ch)| ch.is_whitespace())
+        .map(|(index, _)| index)
+        .unwrap_or(input.len());
+    (input[..end].to_owned(), &input[end..])
 }
 
 fn values_after(input: &str, marker: &str) -> Vec<String> {
