@@ -15,6 +15,16 @@ function readFlag(options: ParsedOptions, key: string): boolean {
     return options[key] === true;
 }
 
+function readNumber(options: ParsedOptions, key: string): number | undefined {
+    const value = options[key];
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+    if (typeof value === "string" && value.length > 0) {
+        const n = Number(value);
+        if (Number.isFinite(n)) return n;
+    }
+    return undefined;
+}
+
 /** Require the first positional; print a localized-style error key message. */
 export function requirePositional(options: ParsedOptions, label: string): string | null {
     const value = options._[0];
@@ -105,6 +115,8 @@ export function forwardCompile(options: ParsedOptions): number {
 
 type PlanShape = {
     duration_seconds?: number;
+    audio_source?: string;
+    audio_tracks?: unknown[];
     settings?: { width?: number; height?: number; frame_rate?: number; sample_rate?: number };
 };
 
@@ -208,13 +220,31 @@ export function forwardRender(options: ParsedOptions): number {
                 printDiagnostics(compiled.diagnostics);
                 return 1;
             }
+            const plan = compiled.plan as PlanShape;
+            const assetRoot = inferAssetRoot(scriptPath);
+            const maxDuration = readNumber(options, "maxDuration") ?? readNumber(options, "max-duration");
+            const planDuration = Math.max(0, plan.duration_seconds ?? 0);
+            const encodeSeconds =
+                maxDuration != null ? Math.max(0, Math.min(maxDuration, planDuration || maxDuration)) : planDuration;
+            const hasTracks = Array.isArray(plan.audio_tracks) && plan.audio_tracks.length > 0;
             const tempWav = join(tmpdir(), `muse-render-audio-${process.pid}-${Date.now()}.wav`);
+            let audioWav: string | undefined;
             try {
-                const score = native.composeScore(source);
-                native.writeScoreWav(score, tempWav);
+                if (hasTracks) {
+                    // Doc 16: bound tracks share the same wall-clock window as video.
+                    native.mixPlanAudioWav(compiled.plan, tempWav, encodeSeconds, assetRoot);
+                    audioWav = tempWav;
+                } else if (maxDuration == null) {
+                    // Draft path: score→WAV when no tracks and not a truncated smoke encode.
+                    const score = native.composeScore(source);
+                    native.writeScoreWav(score, tempWav);
+                    audioWav = tempWav;
+                }
+                // Truncated encode without tracks → silence (ffmpeg mux); avoid full-score / 440Hz mismatch.
                 native.encodePlanMp4(compiled.plan, outPath, {
-                    assetRoot: inferAssetRoot(scriptPath),
-                    audioWav: tempWav,
+                    assetRoot,
+                    audioWav: audioWav ?? null,
+                    maxDurationSeconds: maxDuration ?? null,
                 });
             } finally {
                 try {

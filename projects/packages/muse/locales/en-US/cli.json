@@ -21,5 +21,6 @@
   "cli.opt.output": "Output file path",
   "cli.opt.render-format": "Render format (wav, mp3, or mp4)",
   "cli.opt.export-format": "Export format (midi, musicxml, pdf, svg, or html)",
+  "cli.opt.max-duration": "Cap MP4 encode to the first N wall-clock seconds (audio matches)",
   "cli.opt.json": "Emit machine-readable JSON on stdout"
 }

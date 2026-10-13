@@ -21,5 +21,6 @@
   "cli.opt.output": "输出文件路径",
   "cli.opt.render-format": "渲染格式（wav、mp3 或 mp4）",
   "cli.opt.export-format": "导出格式（midi、musicxml、pdf、svg 或 html）",
+  "cli.opt.max-duration": "将 MP4 编码截断为前 N 秒墙钟时间（音画同窗）",
   "cli.opt.json": "在标准输出打印 JSON"
 }
