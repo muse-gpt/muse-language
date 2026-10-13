@@ -22,6 +22,9 @@ fn default_time_unit() -> String {
 struct TimingLine {
     #[serde(default)]
     id: Option<String>,
+    /// Stable CueId for cross-locale display (docs 18/20). Independent of vocal word index.
+    #[serde(default)]
+    cue_id: Option<String>,
     words: Vec<TimingWord>,
 }
 
@@ -77,11 +80,17 @@ pub fn load_timing_json(path: &Path) -> Result<(Option<String>, Vec<LyricLine>)>
                 end: word.end,
             });
         }
+        let cue_id = line
+            .cue_id
+            .as_ref()
+            .map(|s| s.trim().to_owned())
+            .filter(|s| !s.is_empty());
         lines.push(LyricLine {
             id: line
                 .id
                 .clone()
                 .unwrap_or_else(|| format!("L{}", line_idx + 1)),
+            cue_id,
             words,
         });
     }
@@ -104,7 +113,7 @@ mod tests {
   "lang": "zh-Hans",
   "time_unit": "seconds",
   "lines": [
-    { "id": "L1", "words": [
+    { "id": "L1", "cue_id": "C1", "words": [
       { "id": "W1", "text": "残", "start": 0.0, "end": 0.4 },
       { "text": "响", "start": 0.4, "end": 0.8 }
     ]}
@@ -114,8 +123,31 @@ mod tests {
         .unwrap();
         let (lang, lines) = load_timing_json(&path).unwrap();
         assert_eq!(lang.as_deref(), Some("zh-Hans"));
+        assert_eq!(lines[0].cue_id.as_deref(), Some("C1"));
         assert_eq!(lines[0].words[0].text, "残");
         assert_eq!(lines[0].words[1].id, "W2");
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn blank_cue_id_becomes_none() {
+        let stamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let path = env::temp_dir().join(format!("muse-lyric-cue-{stamp}.json"));
+        fs::write(
+            &path,
+            r#"{
+  "version": 1,
+  "time_unit": "seconds",
+  "lines": [
+    { "id": "L1", "cue_id": "  ", "words": [
+      { "text": "a", "start": 0.0, "end": 0.2 }
+    ]}
+  ]
+}"#,
+        )
+        .unwrap();
+        let (_, lines) = load_timing_json(&path).unwrap();
+        assert_eq!(lines[0].cue_id, None);
         let _ = fs::remove_file(path);
     }
 }

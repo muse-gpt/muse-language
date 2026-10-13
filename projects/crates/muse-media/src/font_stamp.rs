@@ -269,6 +269,7 @@ mod tests {
         let mut canvas = RgbImage::from_pixel(320, 180, Rgb([11, 21, 36]));
         let line = LyricLine {
             id: "L1".into(),
+            cue_id: Some("C1".into()),
             words: vec![
                 LyricWord {
                     id: "W1".into(),

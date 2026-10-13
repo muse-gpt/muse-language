@@ -195,6 +195,9 @@ pub struct LyricTrack {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LyricLine {
     pub id: String,
+    /// Stable semantic cue id (docs 18/20). Optional; localization keys prefer this over `id`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cue_id: Option<String>,
     pub words: Vec<LyricWord>,
 }
 
@@ -906,6 +909,7 @@ pub fn compile_with(source: &str, settings: RenderSettings, options: CompileOpti
                             }
                             lines.push(LyricLine {
                                 id: line_id,
+                                cue_id: None,
                                 words,
                             });
                         }
