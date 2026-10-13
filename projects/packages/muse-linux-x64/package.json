@@ -1,6 +1,6 @@
-﻿{
+{
     "name": "@muse-gpt/muse-linux-x64",
-    "version": "0.0.1",
+    "version": "0.0.2",
     "description": "Prebuilt muse-napi addon for Linux x64 (optional dependency of @muse-gpt/muse)",
     "license": "MPL-2.0",
     "main": "./index.js",
