@@ -92,10 +92,25 @@ type ProjectEntry = {
     outputs?: OutputSpec[];
 };
 
+type ReleaseContext = {
+    locale?: string | null;
+    viewport?: string | null;
+    edit?: string | null;
+    delivery?: string | null;
+};
+
+type ReleaseJob = {
+    id: string;
+    entry: string;
+    context?: ReleaseContext | null;
+    outputs?: string[];
+};
+
 type ProjectManifest = {
     project?: { id?: string };
     render?: { width?: number; height?: number; frame_rate?: number };
     entries: ProjectEntry[];
+    jobs?: ReleaseJob[];
 };
 
 type PlanShape = {
@@ -199,6 +214,12 @@ export function forwardCheck(options: ParsedOptions): number {
             } catch (err) {
                 console.error(`muse: ${err instanceof Error ? err.message : err}`);
                 failed = true;
+            }
+            const jobs = manifest.jobs ?? [];
+            if (jobs.length > 0) {
+                console.log(
+                    `check jobs (${jobs.length}): ${jobs.map((j) => j.id).join(", ")}`,
+                );
             }
             if (failed) return 1;
             console.log(`project ok (${projectRoot})`);

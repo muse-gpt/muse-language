@@ -18,8 +18,8 @@ pub use prefab::{
 };
 pub use types::{
     ArtifactManifest, ArtifactRecord, AssetMeta, AssetSource, ImportSettings, OutputKind,
-    OutputSpec, ProjectEntry, ProjectInfo, ProjectManifest, RenderDefaults, RenderOverride,
-    SkillManifest,
+    OutputSpec, ProjectEntry, ProjectInfo, ProjectManifest, ReleaseContext, ReleaseJob,
+    RenderDefaults, RenderOverride, SkillManifest,
 };
 
 /// Merge project → entry → output render settings (later wins for set fields).
@@ -84,11 +84,13 @@ pub fn validate_manifest(manifest: &ProjectManifest) -> Result<()> {
         bail!("project id and version are required");
     }
     let mut entry_ids = std::collections::HashSet::new();
+    let mut entry_outputs: std::collections::HashMap<&str, std::collections::HashSet<&str>> =
+        std::collections::HashMap::new();
     for entry in &manifest.entries {
         if entry.id.trim().is_empty() || entry.source.trim().is_empty() {
             bail!("entry id and source are required");
         }
-        if !entry_ids.insert(&entry.id) {
+        if !entry_ids.insert(entry.id.as_str()) {
             bail!("duplicate entry id `{}`", entry.id);
         }
         let mut output_ids = std::collections::HashSet::new();
@@ -96,8 +98,49 @@ pub fn validate_manifest(manifest: &ProjectManifest) -> Result<()> {
             if output.id.trim().is_empty() || output.path.trim().is_empty() {
                 bail!("entry `{}` has an output without id or path", entry.id);
             }
-            if !output_ids.insert(&output.id) {
+            if !output_ids.insert(output.id.as_str()) {
                 bail!("entry `{}` has duplicate output id `{}`", entry.id, output.id);
+            }
+        }
+        entry_outputs.insert(entry.id.as_str(), output_ids);
+    }
+    let mut job_ids = std::collections::HashSet::new();
+    for job in &manifest.jobs {
+        if job.id.trim().is_empty() {
+            bail!("job id is required");
+        }
+        if !job_ids.insert(job.id.as_str()) {
+            bail!("duplicate job id `{}`", job.id);
+        }
+        if job.entry.trim().is_empty() {
+            bail!("job `{}` missing entry", job.id);
+        }
+        if !entry_ids.contains(job.entry.as_str()) {
+            bail!(
+                "job `{}` references unknown entry `{}`",
+                job.id,
+                job.entry
+            );
+        }
+        let Some(outputs) = entry_outputs.get(job.entry.as_str()) else {
+            continue;
+        };
+        for out_id in &job.outputs {
+            if out_id.trim().is_empty() {
+                bail!("job `{}` has an empty output id", job.id);
+            }
+            if !outputs.contains(out_id.as_str()) {
+                bail!(
+                    "job `{}` references unknown output `{}` on entry `{}`",
+                    job.id,
+                    out_id,
+                    job.entry
+                );
+            }
+        }
+        if let Some(locale) = job.context.locale.as_deref() {
+            if locale.trim().is_empty() {
+                bail!("job `{}` context.locale must not be empty when set", job.id);
             }
         }
     }
@@ -281,6 +324,68 @@ mod tests {
         )
         .unwrap();
         validate_manifest(&m).unwrap();
+    }
+
+    #[test]
+    fn validates_release_jobs() {
+        let m: ProjectManifest = oak_von::from_str(
+            r#"{
+  project: { id: "p", version: "0.1" }
+  entries: [
+    {
+      id: "landscape"
+      source: "l.muse"
+      outputs: [
+        { id: "preview", kind: "preview", path: "library/l/preview" }
+        { id: "video", kind: "video", path: "library/l/out.mp4" }
+      ]
+    }
+  ]
+  jobs: [
+    {
+      id: "ja-full"
+      entry: "landscape"
+      context: { locale: "ja", viewport: "1920x1080", edit: "full" }
+      outputs: ["preview", "video"]
+    }
+    {
+      id: "zh-preview"
+      entry: "landscape"
+      context: { locale: "zh-Hans" }
+      outputs: ["preview"]
+    }
+  ]
+}"#,
+        )
+        .unwrap();
+        validate_manifest(&m).unwrap();
+        assert_eq!(m.jobs.len(), 2);
+        assert_eq!(m.jobs[0].context.locale.as_deref(), Some("ja"));
+    }
+
+    #[test]
+    fn rejects_job_unknown_entry_or_output() {
+        let bad_entry: ProjectManifest = oak_von::from_str(
+            r#"{
+  project: { id: "p", version: "0.1" }
+  entries: [ { id: "e", source: "e.muse", outputs: [ { id: "a", kind: "audio", path: "a.wav" } ] } ]
+  jobs: [ { id: "j", entry: "missing", outputs: ["a"] } ]
+}"#,
+        )
+        .unwrap();
+        let err = validate_manifest(&bad_entry).unwrap_err().to_string();
+        assert!(err.contains("unknown entry"), "{err}");
+
+        let bad_out: ProjectManifest = oak_von::from_str(
+            r#"{
+  project: { id: "p", version: "0.1" }
+  entries: [ { id: "e", source: "e.muse", outputs: [ { id: "a", kind: "audio", path: "a.wav" } ] } ]
+  jobs: [ { id: "j", entry: "e", outputs: ["nope"] } ]
+}"#,
+        )
+        .unwrap();
+        let err = validate_manifest(&bad_out).unwrap_err().to_string();
+        assert!(err.contains("unknown output"), "{err}");
     }
 
     #[test]

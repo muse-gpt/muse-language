@@ -7,6 +7,35 @@ pub struct ProjectManifest {
     pub render: RenderDefaults,
     #[serde(default)]
     pub entries: Vec<ProjectEntry>,
+    /// Explicit release jobs: entry + context + output ids (docs 19/20). Not a language×layout matrix.
+    #[serde(default)]
+    pub jobs: Vec<ReleaseJob>,
+}
+
+/// One publishable render task over an existing entry (doc 20 §6).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReleaseJob {
+    pub id: String,
+    /// Must match an `entries[].id`.
+    pub entry: String,
+    #[serde(default)]
+    pub context: ReleaseContext,
+    /// Output ids from the referenced entry; empty means all outputs of that entry.
+    #[serde(default)]
+    pub outputs: Vec<String>,
+}
+
+/// Explicit build context for a [`ReleaseJob`] (frozen at build; not system locale).
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ReleaseContext {
+    #[serde(default)]
+    pub locale: Option<String>,
+    #[serde(default)]
+    pub viewport: Option<String>,
+    #[serde(default)]
+    pub edit: Option<String>,
+    #[serde(default)]
+    pub delivery: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
