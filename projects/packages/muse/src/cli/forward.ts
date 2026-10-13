@@ -1,5 +1,5 @@
 import { mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
-import { dirname, extname, isAbsolute, join, resolve } from "node:path";
+import { basename, dirname, extname, isAbsolute, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 
 import type { ParsedOptions } from "@vmz/commander";
@@ -160,6 +160,46 @@ function resolveEntries(
     return manifest.entries ?? [];
 }
 
+/** Resolve `--job` or `--entry` (mutually exclusive). Job supplies entry + locale. */
+function resolveJobSelection(
+    native: MuseNative,
+    manifest: ProjectManifest,
+    options: ParsedOptions,
+): { entries: ProjectEntry[]; job: ReleaseJob | null; locale: string | null } {
+    const jobId = readString(options, "job");
+    const entryId = readString(options, "entry");
+    if (jobId && entryId) {
+        throw new Error("use either --job or --entry, not both");
+    }
+    if (jobId) {
+        const job = native.findProjectJob(manifest, jobId) as ReleaseJob;
+        const entry = native.findProjectEntry(manifest, job.entry) as ProjectEntry;
+        const locale =
+            typeof job.context?.locale === "string" && job.context.locale.trim()
+                ? job.context.locale.trim()
+                : null;
+        return { entries: [entry], job, locale };
+    }
+    return {
+        entries: resolveEntries(native, manifest, entryId),
+        job: null,
+        locale: null,
+    };
+}
+
+/** Insert job id before the final path segment: library/e/out.mp4 → library/e/<job>/out.mp4 */
+function jobScopedOutputPath(projectRoot: string, relativePath: string, jobId: string): string {
+    const absolute = isAbsolute(relativePath) ? relativePath : join(projectRoot, relativePath);
+    return join(dirname(absolute), jobId, basename(absolute));
+}
+
+function filterEntryOutputs(entry: ProjectEntry, job: ReleaseJob | null): OutputSpec[] {
+    const outputs = entry.outputs ?? [];
+    if (!job?.outputs?.length) return outputs;
+    const allowed = new Set(job.outputs);
+    return outputs.filter((o) => allowed.has(o.id));
+}
+
 export function forwardCheck(options: ParsedOptions): number {
     const projectOpt = readString(options, "project");
     try {
@@ -167,16 +207,23 @@ export function forwardCheck(options: ParsedOptions): number {
         if (projectOpt) {
             const projectRoot = resolve(projectOpt);
             const manifest = loadManifest(native, projectRoot);
-            const entries = resolveEntries(native, manifest, readString(options, "entry"));
+            const { entries, job, locale } = resolveJobSelection(native, manifest, options);
             let failed = false;
             for (const entry of entries) {
                 const scriptPath = join(projectRoot, entry.source);
-                console.log(`check entry \`${entry.id}\` (${scriptPath})`);
+                if (job) {
+                    console.log(
+                        `check job \`${job.id}\` → entry \`${entry.id}\`${locale ? ` locale ${locale}` : ""} (${scriptPath})`,
+                    );
+                } else {
+                    console.log(`check entry \`${entry.id}\` (${scriptPath})`);
+                }
                 const source = readFileSync(scriptPath, "utf8");
                 const result = native.compileSource(
                     source,
                     resolveRenderSettings(manifest, entry),
                     projectRoot,
+                    locale,
                 );
                 printDiagnostics(result.diagnostics);
                 if (!result.ok) {
@@ -271,9 +318,10 @@ function runPreview(args: {
     settings?: RenderSettingsInput | null;
     assetRoot: string;
     outDir: string;
+    locale?: string | null;
 }): number {
-    const { native, scriptPath, source, settings, assetRoot, outDir } = args;
-    const compiled = native.compileSource(source, settings, assetRoot);
+    const { native, scriptPath, source, settings, assetRoot, outDir, locale } = args;
+    const compiled = native.compileSource(source, settings, assetRoot, locale ?? null);
     if (!compiled.ok || !compiled.plan) {
         printDiagnostics(compiled.diagnostics);
         return 1;
@@ -324,23 +372,35 @@ export function forwardPreview(options: ParsedOptions): number {
         if (projectOpt) {
             const projectRoot = resolve(projectOpt);
             const manifest = loadManifest(native, projectRoot);
-            const entry = resolveEntries(native, manifest, readString(options, "entry"))[0];
+            const { entries, job, locale } = resolveJobSelection(native, manifest, options);
+            const entry = entries[0];
             if (!entry) {
                 console.error("muse: project has no entries");
                 return 1;
             }
             const scriptPath = join(projectRoot, entry.source);
-            const previewOut =
-                entry.outputs?.find((o) => o.kind === "preview")?.path ??
-                join("library", entry.id, "preview");
-            const previewSpec = entry.outputs?.find((o) => o.kind === "preview");
+            const outputs = filterEntryOutputs(entry, job);
+            const previewSpec =
+                outputs.find((o) => o.kind === "preview") ??
+                (entry.outputs ?? []).find((o) => o.kind === "preview");
+            const previewRel =
+                previewSpec?.path ?? join("library", entry.id, "preview");
+            const outDir = job
+                ? jobScopedOutputPath(projectRoot, previewRel, job.id)
+                : join(projectRoot, previewRel);
+            if (job) {
+                console.log(
+                    `preview job \`${job.id}\` → entry \`${entry.id}\`${locale ? ` locale ${locale}` : ""}`,
+                );
+            }
             return runPreview({
                 native,
                 scriptPath,
                 source: readFileSync(scriptPath, "utf8"),
                 settings: resolveRenderSettings(manifest, entry, previewSpec),
                 assetRoot: projectRoot,
-                outDir: join(projectRoot, previewOut),
+                outDir,
+                locale,
             });
         }
 
@@ -380,18 +440,22 @@ function resolveRenderTarget(options: ParsedOptions): {
     format: string;
     assetRoot: string;
     settings?: RenderSettingsInput;
+    locale?: string | null;
+    jobId?: string | null;
 } | null {
     const projectOpt = readString(options, "project");
     if (projectOpt) {
         const native = loadNative();
         const projectRoot = resolve(projectOpt);
         const manifest = loadManifest(native, projectRoot);
-        const entry = resolveEntries(native, manifest, readString(options, "entry"))[0];
+        const { entries, job, locale } = resolveJobSelection(native, manifest, options);
+        const entry = entries[0];
         if (!entry) {
             console.error("muse: project has no entries");
             return null;
         }
         const scriptPath = join(projectRoot, entry.source);
+        const allowedOutputs = filterEntryOutputs(entry, job);
         const explicitOut = readString(options, "output");
         const outputId = readString(options, "outputId") ?? readString(options, "output-id");
         let format = (readString(options, "format") ?? "").toLowerCase();
@@ -401,13 +465,17 @@ function resolveRenderTarget(options: ParsedOptions): {
             outPath = resolve(explicitOut);
             if (!format) format = extOf(outPath) || "mp4";
         } else if (outputId) {
-            const spec = (entry.outputs ?? []).find((o) => o.id === outputId);
+            const spec = allowedOutputs.find((o) => o.id === outputId);
             if (!spec) {
-                console.error(`muse: unknown output id \`${outputId}\` on entry \`${entry.id}\``);
+                console.error(
+                    `muse: unknown output id \`${outputId}\` on entry \`${entry.id}\`${job ? ` for job \`${job.id}\`` : ""}`,
+                );
                 return null;
             }
             outputSpec = spec;
-            outPath = join(projectRoot, spec.path);
+            outPath = job
+                ? jobScopedOutputPath(projectRoot, spec.path, job.id)
+                : join(projectRoot, spec.path);
             format =
                 format ||
                 (spec.format ?? "").toLowerCase() ||
@@ -415,16 +483,26 @@ function resolveRenderTarget(options: ParsedOptions): {
         } else {
             if (!format) format = "mp4";
             const kind = format === "mp4" ? "video" : "audio";
-            const spec = (entry.outputs ?? []).find((o) => o.kind === kind);
+            const spec = allowedOutputs.find((o) => o.kind === kind);
             outputSpec = spec;
-            outPath = spec
-                ? join(projectRoot, spec.path)
-                : join(
-                      projectRoot,
-                      "library",
-                      entry.id,
-                      `out.${format === "mp3" ? "mp3" : format === "wav" ? "wav" : "mp4"}`,
-                  );
+            if (spec) {
+                outPath = job
+                    ? jobScopedOutputPath(projectRoot, spec.path, job.id)
+                    : join(projectRoot, spec.path);
+            } else {
+                const fallback = join(
+                    projectRoot,
+                    "library",
+                    entry.id,
+                    `out.${format === "mp3" ? "mp3" : format === "wav" ? "wav" : "mp4"}`,
+                );
+                outPath = job ? jobScopedOutputPath(projectRoot, fallback, job.id) : fallback;
+            }
+        }
+        if (job) {
+            console.log(
+                `render job \`${job.id}\` → entry \`${entry.id}\`${locale ? ` locale ${locale}` : ""}`,
+            );
         }
         return {
             scriptPath,
@@ -432,6 +510,8 @@ function resolveRenderTarget(options: ParsedOptions): {
             format,
             assetRoot: projectRoot,
             settings: resolveRenderSettings(manifest, entry, outputSpec),
+            locale,
+            jobId: job?.id ?? null,
         };
     }
 
@@ -471,7 +551,12 @@ export function forwardRender(options: ParsedOptions): number {
         }
 
         if (format === "mp4") {
-            const compiled = native.compileSource(source, settings, assetRoot);
+            const compiled = native.compileSource(
+                source,
+                settings,
+                assetRoot,
+                target.locale ?? null,
+            );
             if (!compiled.ok || !compiled.plan) {
                 printDiagnostics(compiled.diagnostics);
                 return 1;

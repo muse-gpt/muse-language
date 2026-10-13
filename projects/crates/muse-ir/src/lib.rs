@@ -29,6 +29,8 @@ pub use time_map::TimeMap;
 pub struct CompileOptions {
     /// Project / asset root used to resolve relative `from` / asset URIs.
     pub asset_root: Option<PathBuf>,
+    /// When set (e.g. ReleaseJob `context.locale`), overrides lyric `lang` in the script.
+    pub locale_override: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1086,9 +1088,11 @@ pub fn compile_with(source: &str, settings: RenderSettings, options: CompileOpti
                             }
                         }
                     }
-                    let lang = declaration
-                        .lang
+                    let lang = options
+                        .locale_override
                         .clone()
+                        .filter(|s| !s.trim().is_empty())
+                        .or(declaration.lang.clone())
                         .or(file_lang)
                         .unwrap_or_else(|| "und".to_owned());
                     let localized = if let Some(from) = declaration.localized_from.as_deref() {
@@ -1896,6 +1900,7 @@ lyric for main { from chorus_lyric }
             RenderSettings::default(),
             CompileOptions {
                 asset_root: Some(root.clone()),
+                ..Default::default()
             },
         );
         assert!(c.is_success(), "{:?}", c.diagnostics);
@@ -1936,6 +1941,7 @@ lyric for main {
             RenderSettings::default(),
             CompileOptions {
                 asset_root: Some(root.clone()),
+                ..Default::default()
             },
         );
         assert!(c.is_success(), "{:?}", c.diagnostics);
@@ -1949,6 +1955,23 @@ lyric for main {
         assert_eq!(
             track.localized_text_for_line(line).map(|t| t.text.as_str()),
             Some("不知道")
+        );
+
+        let overridden = compile_with(
+            source,
+            RenderSettings::default(),
+            CompileOptions {
+                asset_root: Some(root.clone()),
+                locale_override: Some("en".into()),
+            },
+        );
+        assert!(overridden.is_success(), "{:?}", overridden.diagnostics);
+        let en = &overridden.plan.expect("en override").lyric_tracks[0];
+        assert_eq!(en.lang, "en");
+        assert_eq!(
+            en.localized_text_for_line(&en.lines[0])
+                .map(|t| t.text.as_str()),
+            Some("I don't know")
         );
         let _ = fs::remove_dir_all(root);
     }
@@ -2115,6 +2138,7 @@ instance caption = LyricCard { cue = "C09", intensity = 1.0 }
             RenderSettings::default(),
             CompileOptions {
                 asset_root: Some(root.clone()),
+                ..Default::default()
             },
         );
         assert!(ok.is_success(), "{:?}", ok.diagnostics);
@@ -2134,6 +2158,7 @@ instance caption = MissingCard { cue = "C09" }
             RenderSettings::default(),
             CompileOptions {
                 asset_root: Some(root.clone()),
+                ..Default::default()
             },
         );
         assert!(!bad.is_success());
@@ -2152,6 +2177,7 @@ instance caption = LyricCard { nope = "x" }
             RenderSettings::default(),
             CompileOptions {
                 asset_root: Some(root.clone()),
+                ..Default::default()
             },
         );
         assert!(!bad_port.is_success());

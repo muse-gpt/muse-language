@@ -24,6 +24,7 @@
   "cli.opt.max-duration": "将 MP4 编码截断为前 N 秒墙钟时间（音画同窗）",
   "cli.opt.project": "含 muse.von 的工程根目录",
   "cli.opt.entry": "多入口工程中的 entry id",
+  "cli.opt.job": "muse.von 中的 ReleaseJob id（解析 entry 与 context.locale；不可与 --entry 同用）",
   "cli.opt.output-id": "muse.von 中的 output id（配合 --project）",
   "cli.opt.json": "在标准输出打印 JSON"
 }

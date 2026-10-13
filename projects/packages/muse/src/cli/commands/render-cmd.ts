@@ -8,6 +8,7 @@ export function registerRenderCommand(cli: Cli): void {
         .option("--format <format>", "cli.opt.render-format")
         .option("--project <dir>", "cli.opt.project")
         .option("--entry <id>", "cli.opt.entry")
+        .option("--job <id>", "cli.opt.job")
         .option("--output-id <id>", "cli.opt.output-id")
         .option("--max-duration <seconds>", "cli.opt.max-duration")
         .action((options: ParsedOptions) => forwardRender(options));

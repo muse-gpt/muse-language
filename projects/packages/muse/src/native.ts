@@ -48,11 +48,14 @@ export type MuseNative = {
         source: string,
         settings?: RenderSettingsInput | null,
         assetRoot?: string | null,
+        /** ReleaseJob context.locale; overrides script lyric lang when set. */
+        locale?: string | null,
     ): CompileResult;
     compilationSchemaJson(): unknown;
     loadProjectManifest(projectPath: string): unknown;
     validateProjectManifest(manifest: unknown): void;
     findProjectEntry(manifest: unknown, entryId?: string | null): unknown;
+    findProjectJob(manifest: unknown, jobId: string): unknown;
     /** Validate assets/prefabs VON definitions; returns prefab ids. */
     checkProjectPrefabs(projectPath: string): string[];
     initProject(path: string): void;

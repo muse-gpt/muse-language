@@ -24,6 +24,7 @@
   "cli.opt.max-duration": "Cap MP4 encode to the first N wall-clock seconds (audio matches)",
   "cli.opt.project": "Project root containing muse.von",
   "cli.opt.entry": "Entry id within a multi-entry project",
+  "cli.opt.job": "ReleaseJob id from muse.von (resolves entry + context.locale; not with --entry)",
   "cli.opt.output-id": "Output id from muse.von (with --project)",
   "cli.opt.json": "Emit machine-readable JSON on stdout"
 }

@@ -14,8 +14,8 @@ use muse_media::{
 use muse_music::{Score, compose as compose_score_inner};
 use muse_parser::parse;
 use muse_project::{
-    check_project_prefabs as check_prefabs_under_project, find_entry, hash_file, import_asset,
-    init as project_init, list_skills, load_manifest, media_info, validate_manifest,
+    check_project_prefabs as check_prefabs_under_project, find_entry, find_job, hash_file,
+    import_asset, init as project_init, list_skills, load_manifest, media_info, validate_manifest,
 };
 use muse_types::RenderSettings;
 use napi::bindgen_prelude::*;
@@ -88,17 +88,20 @@ fn settings_from_input(input: Option<RenderSettingsInput>) -> RenderSettings {
     settings
 }
 
+/// `locale` overrides lyric `lang` when set (ReleaseJob `context.locale`).
 #[napi]
 pub fn compile_source(
     source: String,
     settings: Option<RenderSettingsInput>,
     asset_root: Option<String>,
+    locale: Option<String>,
 ) -> Result<CompileResult> {
     let compilation: Compilation = compile_with(
         &source,
         settings_from_input(settings),
         CompileOptions {
             asset_root: asset_root.map(PathBuf::from),
+            locale_override: locale.filter(|s| !s.trim().is_empty()),
         },
     );
     Ok(CompileResult {
@@ -146,6 +149,15 @@ pub fn find_project_entry(manifest: Value, entry_id: Option<String>) -> Result<V
         serde_json::from_value(manifest).map_err(to_napi_err)?;
     let entry = find_entry(&manifest, entry_id.as_deref()).map_err(to_napi_err)?;
     json_value(entry)
+}
+
+/// Resolve a ReleaseJob from a manifest JSON object.
+#[napi]
+pub fn find_project_job(manifest: Value, job_id: String) -> Result<Value> {
+    let manifest: muse_project::ProjectManifest =
+        serde_json::from_value(manifest).map_err(to_napi_err)?;
+    let job = find_job(&manifest, &job_id).map_err(to_napi_err)?;
+    json_value(job)
 }
 
 /// Create a starter Muse project tree (`muse.von` + sample scene).

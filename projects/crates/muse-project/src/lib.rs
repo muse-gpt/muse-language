@@ -196,6 +196,19 @@ pub fn find_entry<'a>(manifest: &'a ProjectManifest, entry_id: Option<&str>) -> 
         None => bail!("multiple entries; pass --entry <id>"),
     }
 }
+
+/// Resolve a [`ReleaseJob`] by id (doc 20 §6).
+pub fn find_job<'a>(manifest: &'a ProjectManifest, job_id: &str) -> Result<&'a ReleaseJob> {
+    let id = job_id.trim();
+    if id.is_empty() {
+        bail!("job id is required");
+    }
+    manifest
+        .jobs
+        .iter()
+        .find(|job| job.id == id)
+        .with_context(|| format!("unknown job `{id}`"))
+}
 pub fn hash_file(path: &Path) -> Result<ContentHash> {
     let bytes = fs::read(path)?;
     Ok(ContentHash(format!("sha256:{:x}", Sha256::digest(bytes))))
@@ -361,6 +374,8 @@ mod tests {
         validate_manifest(&m).unwrap();
         assert_eq!(m.jobs.len(), 2);
         assert_eq!(m.jobs[0].context.locale.as_deref(), Some("ja"));
+        assert_eq!(find_job(&m, "ja-full").unwrap().entry, "landscape");
+        assert!(find_job(&m, "missing").is_err());
     }
 
     #[test]
