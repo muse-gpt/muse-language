@@ -22,5 +22,8 @@
   "cli.opt.render-format": "渲染格式（wav、mp3 或 mp4）",
   "cli.opt.export-format": "导出格式（midi、musicxml、pdf、svg 或 html）",
   "cli.opt.max-duration": "将 MP4 编码截断为前 N 秒墙钟时间（音画同窗）",
+  "cli.opt.project": "含 muse.von 的工程根目录",
+  "cli.opt.entry": "多入口工程中的 entry id",
+  "cli.opt.output-id": "muse.von 中的 output id（配合 --project）",
   "cli.opt.json": "在标准输出打印 JSON"
 }

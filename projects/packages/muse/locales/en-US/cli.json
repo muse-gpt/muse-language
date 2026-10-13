@@ -22,5 +22,8 @@
   "cli.opt.render-format": "Render format (wav, mp3, or mp4)",
   "cli.opt.export-format": "Export format (midi, musicxml, pdf, svg, or html)",
   "cli.opt.max-duration": "Cap MP4 encode to the first N wall-clock seconds (audio matches)",
+  "cli.opt.project": "Project root containing muse.von",
+  "cli.opt.entry": "Entry id within a multi-entry project",
+  "cli.opt.output-id": "Output id from muse.von (with --project)",
   "cli.opt.json": "Emit machine-readable JSON on stdout"
 }

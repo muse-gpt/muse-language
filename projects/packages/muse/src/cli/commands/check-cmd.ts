@@ -3,5 +3,8 @@ import type { Cli, ParsedOptions } from "@vmz/commander";
 import { forwardCheck } from "../forward.js";
 
 export function registerCheckCommand(cli: Cli): void {
-    cli.command("check", "cli.cmd.check").action((options: ParsedOptions) => forwardCheck(options));
+    cli.command("check", "cli.cmd.check")
+        .option("--project <dir>", "cli.opt.project")
+        .option("--entry <id>", "cli.opt.entry")
+        .action((options: ParsedOptions) => forwardCheck(options));
 }

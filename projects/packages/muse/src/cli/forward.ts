@@ -1,10 +1,15 @@
 import { mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
-import { dirname, extname, join, resolve } from "node:path";
+import { dirname, extname, isAbsolute, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 
 import type { ParsedOptions } from "@vmz/commander";
 
-import { loadNative, type Diagnostic } from "../native.js";
+import {
+    loadNative,
+    type Diagnostic,
+    type MuseNative,
+    type RenderSettingsInput,
+} from "../native.js";
 
 function readString(options: ParsedOptions, key: string): string | undefined {
     const value = options[key];
@@ -72,11 +77,105 @@ function extOf(path: string): string {
     return extname(path).replace(/^\./, "").toLowerCase();
 }
 
+type OutputSpec = {
+    id: string;
+    kind: string;
+    path: string;
+    format?: string | null;
+};
+
+type ProjectEntry = {
+    id: string;
+    source: string;
+    outputs?: OutputSpec[];
+};
+
+type ProjectManifest = {
+    project?: { id?: string };
+    render?: { width?: number; height?: number; frame_rate?: number };
+    entries: ProjectEntry[];
+};
+
+type PlanShape = {
+    duration_seconds?: number;
+    audio_source?: string;
+    audio_tracks?: unknown[];
+    settings?: { width?: number; height?: number; frame_rate?: number; sample_rate?: number };
+};
+
+function settingsFromManifest(manifest: ProjectManifest): RenderSettingsInput {
+    return {
+        width: manifest.render?.width,
+        height: manifest.render?.height,
+        frame_rate: manifest.render?.frame_rate,
+    };
+}
+
+function loadManifest(native: MuseNative, projectRoot: string): ProjectManifest {
+    const manifest = native.loadProjectManifest(projectRoot) as ProjectManifest;
+    native.validateProjectManifest(manifest);
+    return manifest;
+}
+
+function resolveEntries(
+    native: MuseNative,
+    manifest: ProjectManifest,
+    entryId: string | undefined,
+): ProjectEntry[] {
+    if (entryId) {
+        return [native.findProjectEntry(manifest, entryId) as ProjectEntry];
+    }
+    return manifest.entries ?? [];
+}
+
 export function forwardCheck(options: ParsedOptions): number {
-    const script = requirePositional(options, "script");
-    if (!script) return 2;
+    const projectOpt = readString(options, "project");
     try {
         const native = loadNative();
+        if (projectOpt) {
+            const projectRoot = resolve(projectOpt);
+            const manifest = loadManifest(native, projectRoot);
+            const entries = resolveEntries(native, manifest, readString(options, "entry"));
+            const settings = settingsFromManifest(manifest);
+            let failed = false;
+            for (const entry of entries) {
+                const scriptPath = join(projectRoot, entry.source);
+                console.log(`check entry \`${entry.id}\` (${scriptPath})`);
+                const source = readFileSync(scriptPath, "utf8");
+                const result = native.compileSource(source, settings);
+                printDiagnostics(result.diagnostics);
+                if (!result.ok) {
+                    failed = true;
+                    continue;
+                }
+                for (const output of entry.outputs ?? []) {
+                    if (!output.path?.trim()) {
+                        console.error(
+                            `muse: entry \`${entry.id}\` output \`${output.id}\` has an empty path`,
+                        );
+                        failed = true;
+                        continue;
+                    }
+                    if (
+                        (output.kind === "preview" ||
+                            output.kind === "video" ||
+                            output.kind === "audio") &&
+                        isAbsolute(output.path)
+                    ) {
+                        console.error(
+                            `muse: entry \`${entry.id}\` output \`${output.id}\` must use a project-relative path`,
+                        );
+                        failed = true;
+                    }
+                }
+            }
+            if (failed) return 1;
+            console.log(`project ok (${projectRoot})`);
+            return 0;
+        }
+
+        const script = requirePositional(options, "script");
+        if (!script) return 2;
         const source = readFileSync(resolve(script), "utf8");
         const result = native.compileSource(source);
         printDiagnostics(result.diagnostics);
@@ -113,63 +212,95 @@ export function forwardCompile(options: ParsedOptions): number {
     }
 }
 
-type PlanShape = {
-    duration_seconds?: number;
-    audio_source?: string;
-    audio_tracks?: unknown[];
-    settings?: { width?: number; height?: number; frame_rate?: number; sample_rate?: number };
-};
+function runPreview(args: {
+    native: MuseNative;
+    scriptPath: string;
+    source: string;
+    settings?: RenderSettingsInput | null;
+    assetRoot: string;
+    outDir: string;
+}): number {
+    const { native, scriptPath, source, settings, assetRoot, outDir } = args;
+    const compiled = native.compileSource(source, settings);
+    if (!compiled.ok || !compiled.plan) {
+        printDiagnostics(compiled.diagnostics);
+        return 1;
+    }
+    const plan = compiled.plan as PlanShape;
+    const scale = 0.1;
+    const width = Math.max(16, Math.floor((plan.settings?.width ?? 1920) * scale));
+    const height = Math.max(16, Math.floor((plan.settings?.height ?? 1080) * scale));
+    const fps = Math.max(1, plan.settings?.frame_rate ?? 24);
+    const duration = Math.max(0, plan.duration_seconds ?? 0);
+    const fullFrames = Math.max(1, Math.ceil(duration * fps));
+    const maxFrames = 240;
+    const frames = Math.min(fullFrames, maxFrames);
+    mkdirSync(outDir, { recursive: true });
+    for (let index = 0; index < frames; index++) {
+        const t = duration > 0 ? Math.min(1, index / fps / duration) : 0;
+        const png = native.composeFramePng(compiled.plan, width, height, t, assetRoot);
+        writeFileSync(join(outDir, `frame-${String(index).padStart(4, "0")}.png`), png);
+    }
+    const audioSeconds = Math.min(duration, 10, frames / fps);
+    const audioSource = native.mixPlanAudioWav(
+        compiled.plan,
+        join(outDir, "preview.wav"),
+        audioSeconds,
+        assetRoot,
+    );
+    const manifest = {
+        frames,
+        width,
+        height,
+        scale,
+        plan_duration_seconds: duration,
+        rendered_duration_seconds: frames / fps,
+        audio_seconds: audioSeconds,
+        audio_file: "preview.wav",
+        audio_source: audioSource,
+        script: scriptPath,
+    };
+    writeFileSync(join(outDir, "manifest.json"), JSON.stringify(manifest, null, 2));
+    console.log(`preview written to ${outDir} (${frames} frames)`);
+    return 0;
+}
 
 export function forwardPreview(options: ParsedOptions): number {
-    const script = requirePositional(options, "script");
-    if (!script) return 2;
     try {
         const native = loadNative();
+        const projectOpt = readString(options, "project");
+        if (projectOpt) {
+            const projectRoot = resolve(projectOpt);
+            const manifest = loadManifest(native, projectRoot);
+            const entry = resolveEntries(native, manifest, readString(options, "entry"))[0];
+            if (!entry) {
+                console.error("muse: project has no entries");
+                return 1;
+            }
+            const scriptPath = join(projectRoot, entry.source);
+            const previewOut =
+                entry.outputs?.find((o) => o.kind === "preview")?.path ??
+                join("library", entry.id, "preview");
+            return runPreview({
+                native,
+                scriptPath,
+                source: readFileSync(scriptPath, "utf8"),
+                settings: settingsFromManifest(manifest),
+                assetRoot: projectRoot,
+                outDir: join(projectRoot, previewOut),
+            });
+        }
+
+        const script = requirePositional(options, "script");
+        if (!script) return 2;
         const scriptPath = resolve(script);
-        const source = readFileSync(scriptPath, "utf8");
-        const compiled = native.compileSource(source);
-        if (!compiled.ok || !compiled.plan) {
-            printDiagnostics(compiled.diagnostics);
-            return 1;
-        }
-        const plan = compiled.plan as PlanShape;
-        const scale = 0.1;
-        const width = Math.max(16, Math.floor((plan.settings?.width ?? 1920) * scale));
-        const height = Math.max(16, Math.floor((plan.settings?.height ?? 1080) * scale));
-        const fps = Math.max(1, plan.settings?.frame_rate ?? 24);
-        const duration = Math.max(0, plan.duration_seconds ?? 0);
-        const fullFrames = Math.max(1, Math.ceil(duration * fps));
-        const maxFrames = 240;
-        const frames = Math.min(fullFrames, maxFrames);
-        const outDir = join(dirname(scriptPath), "preview");
-        mkdirSync(outDir, { recursive: true });
-        const assetRoot = inferAssetRoot(scriptPath);
-        for (let index = 0; index < frames; index++) {
-            const t = duration > 0 ? Math.min(1, index / fps / duration) : 0;
-            const png = native.composeFramePng(compiled.plan, width, height, t, assetRoot);
-            writeFileSync(join(outDir, `frame-${String(index).padStart(4, "0")}.png`), png);
-        }
-        const audioSeconds = Math.min(duration, 10, frames / fps);
-        const audioSource = native.mixPlanAudioWav(
-            compiled.plan,
-            join(outDir, "preview.wav"),
-            audioSeconds,
-            assetRoot,
-        );
-        const manifest = {
-            frames,
-            width,
-            height,
-            scale,
-            plan_duration_seconds: duration,
-            rendered_duration_seconds: frames / fps,
-            audio_seconds: audioSeconds,
-            audio_file: "preview.wav",
-            audio_source: audioSource,
-        };
-        writeFileSync(join(outDir, "manifest.json"), JSON.stringify(manifest, null, 2));
-        console.log(`preview written to ${outDir} (${frames} frames)`);
-        return 0;
+        return runPreview({
+            native,
+            scriptPath,
+            source: readFileSync(scriptPath, "utf8"),
+            assetRoot: inferAssetRoot(scriptPath),
+            outDir: join(dirname(scriptPath), "preview"),
+        });
     } catch (err) {
         console.error(`muse: ${err instanceof Error ? err.message : err}`);
         return 1;
@@ -190,19 +321,83 @@ export function forwardInit(options: ParsedOptions): number {
     }
 }
 
-export function forwardRender(options: ParsedOptions): number {
+function resolveRenderTarget(options: ParsedOptions): {
+    scriptPath: string;
+    outPath: string;
+    format: string;
+    assetRoot: string;
+    settings?: RenderSettingsInput;
+} | null {
+    const projectOpt = readString(options, "project");
+    if (projectOpt) {
+        const native = loadNative();
+        const projectRoot = resolve(projectOpt);
+        const manifest = loadManifest(native, projectRoot);
+        const entry = resolveEntries(native, manifest, readString(options, "entry"))[0];
+        if (!entry) {
+            console.error("muse: project has no entries");
+            return null;
+        }
+        const scriptPath = join(projectRoot, entry.source);
+        const explicitOut = readString(options, "output");
+        const outputId = readString(options, "outputId") ?? readString(options, "output-id");
+        let format = (readString(options, "format") ?? "").toLowerCase();
+        let outPath: string;
+        if (explicitOut) {
+            outPath = resolve(explicitOut);
+            if (!format) format = extOf(outPath) || "mp4";
+        } else if (outputId) {
+            const spec = (entry.outputs ?? []).find((o) => o.id === outputId);
+            if (!spec) {
+                console.error(`muse: unknown output id \`${outputId}\` on entry \`${entry.id}\``);
+                return null;
+            }
+            outPath = join(projectRoot, spec.path);
+            format =
+                format ||
+                (spec.format ?? "").toLowerCase() ||
+                (spec.kind === "audio" ? "wav" : "mp4");
+        } else {
+            if (!format) format = "mp4";
+            const kind = format === "mp4" ? "video" : "audio";
+            const spec = (entry.outputs ?? []).find((o) => o.kind === kind);
+            outPath = spec
+                ? join(projectRoot, spec.path)
+                : join(projectRoot, "library", entry.id, `out.${format === "mp3" ? "mp3" : format === "wav" ? "wav" : "mp4"}`);
+        }
+        return {
+            scriptPath,
+            outPath,
+            format,
+            assetRoot: projectRoot,
+            settings: settingsFromManifest(manifest),
+        };
+    }
+
     const script = requirePositional(options, "script");
-    if (!script) return 2;
+    if (!script) return null;
     const output = readString(options, "output");
     if (!output) {
         console.error("muse: missing --output <file>");
-        return 2;
+        return null;
     }
+    const scriptPath = resolve(script);
     const outPath = resolve(output);
     const format = (readString(options, "format") ?? (extOf(outPath) || "mp4")).toLowerCase();
+    return {
+        scriptPath,
+        outPath,
+        format,
+        assetRoot: inferAssetRoot(scriptPath),
+    };
+}
+
+export function forwardRender(options: ParsedOptions): number {
     try {
+        const target = resolveRenderTarget(options);
+        if (!target) return 2;
+        const { scriptPath, outPath, format, assetRoot, settings } = target;
         const native = loadNative();
-        const scriptPath = resolve(script);
         const source = readFileSync(scriptPath, "utf8");
         ensureParent(outPath);
 
@@ -215,36 +410,35 @@ export function forwardRender(options: ParsedOptions): number {
         }
 
         if (format === "mp4") {
-            const compiled = native.compileSource(source);
+            const compiled = native.compileSource(source, settings);
             if (!compiled.ok || !compiled.plan) {
                 printDiagnostics(compiled.diagnostics);
                 return 1;
             }
             const plan = compiled.plan as PlanShape;
-            const assetRoot = inferAssetRoot(scriptPath);
-            const maxDuration = readNumber(options, "maxDuration") ?? readNumber(options, "max-duration");
+            const maxDuration =
+                readNumber(options, "maxDuration") ?? readNumber(options, "max-duration");
             const planDuration = Math.max(0, plan.duration_seconds ?? 0);
             const encodeSeconds =
-                maxDuration != null ? Math.max(0, Math.min(maxDuration, planDuration || maxDuration)) : planDuration;
+                maxDuration != null
+                    ? Math.max(0, Math.min(maxDuration, planDuration || maxDuration))
+                    : planDuration;
             const hasTracks = Array.isArray(plan.audio_tracks) && plan.audio_tracks.length > 0;
             const tempWav = join(tmpdir(), `muse-render-audio-${process.pid}-${Date.now()}.wav`);
             let audioWav: string | undefined;
             try {
                 if (hasTracks) {
-                    // Doc 16: bound tracks share the same wall-clock window as video.
                     native.mixPlanAudioWav(compiled.plan, tempWav, encodeSeconds, assetRoot);
                     audioWav = tempWav;
                 } else if (maxDuration == null) {
-                    // Draft path: score→WAV when no tracks and not a truncated smoke encode.
                     const score = native.composeScore(source);
                     native.writeScoreWav(score, tempWav);
                     audioWav = tempWav;
                 }
-                // Truncated encode without tracks → silence (ffmpeg mux); avoid full-score / 440Hz mismatch.
                 native.encodePlanMp4(compiled.plan, outPath, {
                     assetRoot,
-                    audioWav: audioWav ?? null,
-                    maxDurationSeconds: maxDuration ?? null,
+                    ...(audioWav ? { audioWav } : {}),
+                    ...(maxDuration != null ? { maxDurationSeconds: maxDuration } : {}),
                 });
             } finally {
                 try {
@@ -318,7 +512,8 @@ export function forwardAssetImport(options: ParsedOptions): number {
     if (!file) return 2;
     try {
         const native = loadNative();
-        const meta = native.importProjectAsset(resolve("."), resolve(file)) as {
+        const project = readString(options, "project") ?? ".";
+        const meta = native.importProjectAsset(resolve(project), resolve(file)) as {
             guid?: string;
             hash?: string;
         };
@@ -356,9 +551,10 @@ export function forwardScoreInfo(options: ParsedOptions): number {
     }
 }
 
-export function forwardSkillList(): number {
+export function forwardSkillList(options?: ParsedOptions): number {
     try {
-        const skills = loadNative().listProjectSkills(resolve(".")) as Array<{
+        const project = options ? (readString(options, "project") ?? ".") : ".";
+        const skills = loadNative().listProjectSkills(resolve(project)) as Array<{
             name: string;
             version: string;
             description?: string;
@@ -373,9 +569,10 @@ export function forwardSkillList(): number {
     }
 }
 
-export function forwardSkillValidate(): number {
+export function forwardSkillValidate(options?: ParsedOptions): number {
     try {
-        const skills = loadNative().listProjectSkills(resolve(".")) as Array<{
+        const project = options ? (readString(options, "project") ?? ".") : ".";
+        const skills = loadNative().listProjectSkills(resolve(project)) as Array<{
             name: string;
             version: string;
         }>;
@@ -393,9 +590,10 @@ export function forwardSkillValidate(): number {
     }
 }
 
-export function forwardMcpServe(): number {
+export function forwardMcpServe(options?: ParsedOptions): number {
     try {
-        loadNative().serveMcpStdio(resolve("."));
+        const project = options ? (readString(options, "project") ?? ".") : ".";
+        loadNative().serveMcpStdio(resolve(project));
         return 0;
     } catch (err) {
         console.error(`muse: ${err instanceof Error ? err.message : err}`);
