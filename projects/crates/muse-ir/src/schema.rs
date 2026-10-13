@@ -22,6 +22,8 @@ pub struct IrShot {
     pub target: Option<String>,
     pub transition: String,
     pub transition_bars: f32,
+    pub remap_mode: Option<String>,
+    pub remap_source: Option<String>,
 }
 #[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct IrAsset {
@@ -85,6 +87,8 @@ impl From<&Shot> for IrShot {
             target: value.target.clone(),
             transition: value.transition.as_str().into(),
             transition_bars: value.transition_bars,
+            remap_mode: value.remap.as_ref().map(|r| r.mode.as_str().into()),
+            remap_source: value.remap.as_ref().map(|r| r.source.clone()),
         }
     }
 }

@@ -1,5 +1,5 @@
 //! Semantic validation and render-plan construction for Muse scripts.
-use muse_parser::{BlockContent, BlockKind, Declaration, VisualDecl, parse};
+use muse_parser::{BlockContent, BlockKind, Declaration, ShotDecl, VisualDecl, parse};
 use muse_types::{Diagnostic, RenderSettings, Span};
 use serde::Serialize;
 use std::collections::BTreeSet;
@@ -38,7 +38,32 @@ impl ShotTransition {
     }
 }
 
-/// Timed cut in the render plan (`shot id : bars scene name [xfade bars]`).
+/// Time remap applied while a shot is active (references another shot id).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ShotRemapMode {
+    Freeze,
+    Reverse,
+    Melt,
+}
+
+impl ShotRemapMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Freeze => "freeze",
+            Self::Reverse => "reverse",
+            Self::Melt => "melt",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ShotRemap {
+    pub mode: ShotRemapMode,
+    pub source: String,
+}
+
+/// Timed cut in the render plan (`shot id : bars scene name [xfade bars] [remap source]`).
 #[derive(Debug, Clone, Serialize)]
 pub struct Shot {
     pub id: String,
@@ -49,6 +74,8 @@ pub struct Shot {
     pub transition: ShotTransition,
     /// Transition length in bars (incoming from the previous shot).
     pub transition_bars: f32,
+    /// Optional freeze/reverse/melt against an existing shot id.
+    pub remap: Option<ShotRemap>,
 }
 #[derive(Debug, Clone, Serialize)]
 pub struct Asset {
@@ -222,6 +249,39 @@ pub fn compile(source: &str, settings: RenderSettings) -> Compilation {
                                     0.0
                                 }
                             };
+                            let remap = match (
+                                shot.remap_mode.as_deref().map(str::trim),
+                                shot.remap_source.as_deref().map(str::trim),
+                            ) {
+                                (None, None) => None,
+                                (Some(mode), Some(source)) if !source.is_empty() => {
+                                    let mode = match mode.to_ascii_lowercase().as_str() {
+                                        "freeze" => Some(ShotRemapMode::Freeze),
+                                        "reverse" => Some(ShotRemapMode::Reverse),
+                                        "melt" => Some(ShotRemapMode::Melt),
+                                        other => {
+                                            diagnostics.push(Diagnostic::error(
+                                                format!(
+                                                    "unknown shot remap `{other}` (freeze|reverse|melt)"
+                                                ),
+                                                shot.span,
+                                            ));
+                                            None
+                                        }
+                                    };
+                                    mode.map(|mode| ShotRemap {
+                                        mode,
+                                        source: source.to_owned(),
+                                    })
+                                }
+                                _ => {
+                                    diagnostics.push(Diagnostic::error(
+                                        "shot remap requires `freeze|reverse|melt <shot_id>`",
+                                        shot.span,
+                                    ));
+                                    None
+                                }
+                            };
                             shots.push(Shot {
                                 id: shot.id.clone(),
                                 start_bar: shot.start_bar,
@@ -230,8 +290,10 @@ pub fn compile(source: &str, settings: RenderSettings) -> Compilation {
                                 target: shot.target.clone(),
                                 transition,
                                 transition_bars,
+                                remap,
                             });
                         }
+                        validate_shot_remaps(&shots, shot_decls, &mut diagnostics);
                     }
                 }
                 BlockKind::Tempo => {
@@ -488,7 +550,8 @@ impl RenderPlan {
             .find(|shot| shot.start_bar <= bar && bar < shot.end_bar)
     }
 
-    /// Base visuals (no scene tag) plus overlays matching the active shot scene.
+    /// Base visuals (no scene tag) plus overlays matching the active look scene
+    /// (remap source scene when a time remap is set).
     pub fn visuals_at_normalized(&self, t: f32) -> Vec<&VisualLayer> {
         let mut layers: Vec<&VisualLayer> = self
             .visuals
@@ -496,10 +559,11 @@ impl RenderPlan {
             .filter(|layer| layer.scene.is_none())
             .collect();
         if let Some(shot) = self.shot_at_normalized(t) {
+            let scene = self.look_scene_for_shot(shot);
             layers.extend(
                 self.visuals
                     .iter()
-                    .filter(|layer| layer.scene.as_deref() == Some(shot.scene.as_str())),
+                    .filter(|layer| layer.scene.as_deref() == Some(scene)),
             );
         }
         if layers.is_empty() {
@@ -509,7 +573,18 @@ impl RenderPlan {
         }
     }
 
+    /// Scene name used for visual overlays (follows remap source when present).
+    pub fn look_scene_for_shot<'a>(&'a self, shot: &'a Shot) -> &'a str {
+        if let Some(remap) = &shot.remap {
+            if let Some(source) = self.shots.iter().find(|s| s.id == remap.source) {
+                return source.scene.as_str();
+            }
+        }
+        shot.scene.as_str()
+    }
+
     /// Progress within the active shot in `[0, 1]`, or global `t` when no shot.
+    /// Applies freeze / reverse / melt when the shot declares a remap.
     pub fn shot_progress_normalized(&self, t: f32) -> f32 {
         let t = t.clamp(0.0, 1.0);
         let Some(shot) = self.shot_at_normalized(t) else {
@@ -521,7 +596,13 @@ impl RenderPlan {
         }
         let bar = f64::from(t) * f64::from(end);
         let span = f64::from(shot.end_bar - shot.start_bar);
-        (((bar - f64::from(shot.start_bar)) / span) as f32).clamp(0.0, 1.0)
+        let linear = (((bar - f64::from(shot.start_bar)) / span) as f32).clamp(0.0, 1.0);
+        match shot.remap.as_ref().map(|r| r.mode) {
+            None => linear,
+            Some(ShotRemapMode::Freeze) => 1.0,
+            Some(ShotRemapMode::Reverse) => 1.0 - linear,
+            Some(ShotRemapMode::Melt) => 1.0 - (1.0 - linear).powi(3),
+        }
     }
 
     /// Absolute bar position for normalized `t`.
@@ -577,6 +658,53 @@ pub struct TransitionState {
     pub from_t: f32,
     /// Extra white flash amount in `[0, 1]` (flash transitions).
     pub flash: f32,
+}
+
+fn validate_shot_remaps(shots: &[Shot], decls: &[ShotDecl], diagnostics: &mut Vec<Diagnostic>) {
+    for shot in shots {
+        let Some(remap) = &shot.remap else {
+            continue;
+        };
+        let span = decls
+            .iter()
+            .find(|d| d.id == shot.id)
+            .map(|d| d.span)
+            .unwrap_or_else(|| Span::new(0, 0, 1, 1));
+        if !shots.iter().any(|s| s.id == remap.source) {
+            diagnostics.push(Diagnostic::error(
+                format!(
+                    "unknown remap source `{}` on shot `{}`",
+                    remap.source, shot.id
+                ),
+                span,
+            ));
+            continue;
+        }
+        // Self-remap is allowed; reject only multi-shot cycles (A→B→A).
+        if remap.source == shot.id {
+            continue;
+        }
+        let mut cursor = remap.source.as_str();
+        let mut guard = 0usize;
+        while guard < shots.len() {
+            guard += 1;
+            let Some(next) = shots
+                .iter()
+                .find(|s| s.id == cursor)
+                .and_then(|s| s.remap.as_ref())
+            else {
+                break;
+            };
+            if next.source == shot.id {
+                diagnostics.push(Diagnostic::error(
+                    format!("cyclic shot remap involving `{}`", shot.id),
+                    span,
+                ));
+                break;
+            }
+            cursor = next.source.as_str();
+        }
+    }
 }
 
 #[cfg(test)]
@@ -732,6 +860,47 @@ mod tests {
         let tr = plan.transition_at_normalized(edge as f32).expect("slices");
         assert_eq!(tr.kind, ShotTransition::Slices);
         assert!(tr.mix > 0.0 && tr.mix < 1.0);
+    }
+
+    #[test]
+    fn captures_shot_time_remap() {
+        let c = compile(
+            r##"timeline { act main : 0..24 shot s01 : 0..8 scene ember shot s02 : 8..16 scene illust reverse s01 shot s03 : 16..24 scene thread freeze s01 } visual for main scene ember { fx pulse 0.8 }"##,
+            RenderSettings::default(),
+        );
+        assert!(c.is_success(), "{:?}", c.diagnostics);
+        let plan = c.plan.expect("valid remap");
+        let remap = plan.shots[1].remap.as_ref().expect("reverse");
+        assert_eq!(remap.mode, ShotRemapMode::Reverse);
+        assert_eq!(remap.source, "s01");
+        assert_eq!(
+            plan.shots[2].remap.as_ref().map(|r| r.mode),
+            Some(ShotRemapMode::Freeze)
+        );
+        // Mid s02 (reverse s01): progress near 0.5 → reversed ~0.5; look scene from s01.
+        let mid = 12.0 / 24.0;
+        assert!((plan.shot_progress_normalized(mid as f32) - 0.5).abs() < 0.05);
+        assert_eq!(
+            plan.look_scene_for_shot(&plan.shots[1]),
+            "ember"
+        );
+        assert!(
+            plan.visuals_at_normalized(mid as f32)
+                .iter()
+                .any(|v| v.pulse == Some(0.8))
+        );
+        // Freeze holds end progress.
+        let freeze_t = 20.0 / 24.0;
+        assert!((plan.shot_progress_normalized(freeze_t as f32) - 1.0).abs() < 1e-3);
+    }
+
+    #[test]
+    fn rejects_unknown_remap_source() {
+        let c = compile(
+            "timeline { act main : 0..8 shot s01 : 0..4 scene a shot s02 : 4..8 scene b freeze missing }",
+            RenderSettings::default(),
+        );
+        assert!(!c.is_success());
     }
 
     #[test]

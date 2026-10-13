@@ -64,7 +64,7 @@ pub struct ActDecl {
     pub span: Span,
 }
 
-/// Timed cut inside a timeline: `shot s01 : 0..4 scene ember [for main] [xfade|flash|iris|slices|cut bars]`.
+/// Timed cut: `shot id : bars scene name [for act] [transition] [freeze|reverse|melt source]`.
 #[derive(Debug, Clone, Serialize)]
 pub struct ShotDecl {
     pub id: String,
@@ -76,6 +76,10 @@ pub struct ShotDecl {
     pub transition: String,
     /// Transition length in bars (0 = instantaneous cut).
     pub transition_bars: String,
+    /// Optional time remap mode (`freeze`, `reverse`, `melt`).
+    pub remap_mode: Option<String>,
+    /// Source shot id for remap (immutable reference).
+    pub remap_source: Option<String>,
     pub span: Span,
 }
 

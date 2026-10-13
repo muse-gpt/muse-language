@@ -563,7 +563,7 @@ fn parse_timeline_body(body: &str, span: Span) -> (Vec<ActDecl>, Vec<ShotDecl>) 
     (acts, shots)
 }
 
-/// `shot id : start..end scene name [for act] [cut|xfade|flash|iris|slices [bars]]` starting at `words[0]`.
+/// `shot id : start..end scene name [for act] [transition [bars]] [freeze|reverse|melt source]` starting at `words[0]`.
 fn parse_shot_at(words: &[&str], span: Span) -> Option<(ShotDecl, usize)> {
     if words.len() < 6 || words[0] != "shot" || words[2] != ":" || words[4] != "scene" {
         return None;
@@ -606,6 +606,26 @@ fn parse_shot_at(words: &[&str], span: Span) -> Option<(ShotDecl, usize)> {
             _ => {}
         }
     }
+    let mut remap_mode = None;
+    let mut remap_source = None;
+    if index + 1 < words.len() {
+        match words[index] {
+            mode @ ("freeze" | "reverse" | "melt") => {
+                let source = words[index + 1].trim_matches('"');
+                if !source.is_empty()
+                    && source != "shot"
+                    && source != "act"
+                    && source != "scene"
+                    && source != "for"
+                {
+                    remap_mode = Some(mode.to_owned());
+                    remap_source = Some(source.to_owned());
+                    index += 2;
+                }
+            }
+            _ => {}
+        }
+    }
     Some((
         ShotDecl {
             id: words[1].to_owned(),
@@ -615,6 +635,8 @@ fn parse_shot_at(words: &[&str], span: Span) -> Option<(ShotDecl, usize)> {
             target,
             transition,
             transition_bars,
+            remap_mode,
+            remap_source,
             span,
         },
         index,
@@ -795,6 +817,24 @@ mod tests {
         assert_eq!(shots[1].id, "s02");
         assert_eq!(shots[1].scene, "illust");
         assert_eq!(shots[1].target.as_deref(), Some("main"));
+    }
+
+    #[test]
+    fn lowers_shot_time_remap() {
+        let result = parse(
+            "timeline { act main : 0..24 shot s01 : 0..8 scene a shot s02 : 8..16 scene b reverse s01 shot s03 : 16..24 scene c freeze s01 }",
+        );
+        assert!(result.diagnostics.is_empty());
+        let Declaration::Block(timeline) = &result.script.declarations[0] else {
+            panic!("expected timeline block")
+        };
+        let BlockContent::Timeline { shots, .. } = &timeline.content else {
+            panic!("expected typed timeline content")
+        };
+        assert_eq!(shots[1].remap_mode.as_deref(), Some("reverse"));
+        assert_eq!(shots[1].remap_source.as_deref(), Some("s01"));
+        assert_eq!(shots[2].remap_mode.as_deref(), Some("freeze"));
+        assert_eq!(shots[2].remap_source.as_deref(), Some("s01"));
     }
 
     #[test]
