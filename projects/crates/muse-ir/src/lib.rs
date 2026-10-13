@@ -7,9 +7,14 @@ use muse_types::{Diagnostic, RenderSettings, Span};
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeSet, path::{Path, PathBuf}};
 
+mod lyric_locale;
 mod lyric_timing;
 mod schema;
 mod time_map;
+pub use lyric_locale::{
+    DisplaySegment, LocalizedLyricCatalog, LocalizedLyricCue, LocalizedLyricText,
+    LyricHighlightPolicy, load_localized_lyric_catalog,
+};
 pub use lyric_timing::load_timing_json;
 pub use schema::{
     CompilationDocument, IrAct, IrAsset, IrOrchestrationRule, IrShot, compilation_schema,
