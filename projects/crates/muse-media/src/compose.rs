@@ -365,7 +365,16 @@ fn paint_lyric_layers(canvas: &mut RgbImage, plan: &RenderPlan, t_norm: f32) {
             continue;
         };
         let active = track.active_word_at(t_sec);
-        crate::font_stamp::draw_lyric_caption(canvas, layer, line, active);
+        let display = if track.uses_localized_display(line) {
+            track
+                .localized_text_for_line(line)
+                .map(|t| t.text.as_str())
+        } else {
+            None
+        };
+        crate::font_stamp::draw_lyric_caption_with_display(
+            canvas, layer, line, active, display,
+        );
     }
 }
 

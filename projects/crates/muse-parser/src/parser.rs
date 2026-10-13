@@ -397,6 +397,16 @@ fn parse_lyric_decl(body: &str, span: Span) -> LyricDecl {
             if let Some(lang) = quoted_after(trimmed, "lang") {
                 decl.lang = Some(lang);
             }
+        } else if let Some(rest) = trimmed.strip_prefix("localized") {
+            let rest = rest.trim();
+            if let Some(rest) = rest.strip_prefix("from") {
+                let rest = rest.trim().trim_matches(';').trim();
+                if let Some(q) = rest.strip_prefix('"').and_then(|s| s.split('"').next()) {
+                    decl.localized_from = Some(q.to_owned());
+                } else if !rest.is_empty() {
+                    decl.localized_from = Some(rest.to_owned());
+                }
+            }
         } else if trimmed.starts_with("from") {
             let rest = trimmed["from".len()..].trim().trim_matches(';').trim();
             if let Some(q) = rest.strip_prefix('"').and_then(|s| s.split('"').next()) {
@@ -1225,6 +1235,28 @@ mod tests {
         assert_eq!(lyric.layers[0].role.as_deref(), Some("foreground"));
         assert_eq!(lyric.layers[0].size, Some(48.0));
         assert_eq!(lyric.layers[0].highlight_color.as_deref(), Some("#ffe08a"));
+    }
+
+    #[test]
+    fn parses_localized_from_without_eating_from() {
+        let result = parse(
+            r#"lyric for main {
+  from chorus_lyric
+  localized from chorus_locale
+  lang "zh-Hans"
+  line { word "a" 0s..1s }
+}"#,
+        );
+        assert!(result.diagnostics.is_empty(), "{:?}", result.diagnostics);
+        let Declaration::Block(block) = &result.script.declarations[0] else {
+            panic!("expected block");
+        };
+        let BlockContent::Lyric(lyric) = &block.content else {
+            panic!("expected lyric");
+        };
+        assert_eq!(lyric.from.as_deref(), Some("chorus_lyric"));
+        assert_eq!(lyric.localized_from.as_deref(), Some("chorus_locale"));
+        assert_eq!(lyric.lang.as_deref(), Some("zh-Hans"));
     }
 
     #[test]

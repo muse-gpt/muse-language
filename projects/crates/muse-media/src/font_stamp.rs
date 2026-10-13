@@ -106,13 +106,27 @@ pub fn draw_stamp_label(
 }
 
 /// Draw the active lyric line near the bottom safe area; highlight the active word.
+///
+/// When `display_text` is set (localized line/phrase), paint that single run instead of
+/// vocal word slices — timing still comes from the vocal line window.
 pub fn draw_lyric_caption(
     canvas: &mut RgbImage,
     layer: &LyricLayer,
     line: &LyricLine,
     active: Option<&LyricWord>,
 ) {
-    if line.words.is_empty() {
+    draw_lyric_caption_with_display(canvas, layer, line, active, None);
+}
+
+/// Same as [`draw_lyric_caption`], with optional localized display override.
+pub fn draw_lyric_caption_with_display(
+    canvas: &mut RgbImage,
+    layer: &LyricLayer,
+    line: &LyricLine,
+    active: Option<&LyricWord>,
+    display_text: Option<&str>,
+) {
+    if line.words.is_empty() && display_text.is_none_or(|s| s.trim().is_empty()) {
         return;
     }
     let Some(font) = system_font() else {
@@ -131,21 +145,35 @@ pub fn draw_lyric_caption(
 
     let mut runs: Vec<(String, [u8; 3], f32)> = Vec::new();
     let mut total_w = 0.0_f32;
-    for (idx, word) in line.words.iter().enumerate() {
-        let color = if active.is_some_and(|a| a.id == word.id) {
+    if let Some(text) = display_text.map(str::trim).filter(|s| !s.is_empty()) {
+        let color = if active.is_some() {
             layer.highlight_color
         } else {
             layer.color
         };
         let mut caret = 0.0_f32;
-        for ch in word.text.chars() {
+        for ch in text.chars() {
             caret += scaled.h_advance(font.glyph_id(ch));
         }
-        if idx > 0 {
-            total_w += gap;
+        total_w = caret;
+        runs.push((text.to_owned(), color, caret));
+    } else {
+        for (idx, word) in line.words.iter().enumerate() {
+            let color = if active.is_some_and(|a| a.id == word.id) {
+                layer.highlight_color
+            } else {
+                layer.color
+            };
+            let mut caret = 0.0_f32;
+            for ch in word.text.chars() {
+                caret += scaled.h_advance(font.glyph_id(ch));
+            }
+            if idx > 0 {
+                total_w += gap;
+            }
+            total_w += caret;
+            runs.push((word.text.clone(), color, caret));
         }
-        total_w += caret;
-        runs.push((word.text.clone(), color, caret));
     }
     if total_w <= 0.0 {
         return;

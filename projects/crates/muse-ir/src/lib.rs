@@ -193,8 +193,12 @@ pub struct AudioTrack {
 pub struct LyricTrack {
     pub id: String,
     pub act: Option<String>,
+    /// Display locale (BCP 47). With [`Self::localized`], selects CueId display text.
     pub lang: String,
     pub lines: Vec<LyricLine>,
+    /// Optional CueId×locale catalog frozen at compile (`localized from`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub localized: Option<LocalizedLyricCatalog>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -272,6 +276,27 @@ impl LyricTrack {
                 .zip(line.words.last())
                 .is_some_and(|(a, b)| a.start <= t && t < b.end)
         })
+    }
+
+    /// Localized display payload for a line at `lang`, if catalog + cue_id resolve.
+    pub fn localized_text_for_line(&self, line: &LyricLine) -> Option<&LocalizedLyricText> {
+        let catalog = self.localized.as_ref()?;
+        let cue_id = line.cue_id.as_deref()?;
+        catalog.text_for(cue_id, &self.lang)
+    }
+
+    /// Whether caption should paint catalog display text (not vocal word runs).
+    ///
+    /// Source-locale + `word` highlight keeps vocal word runs; other locales use line/phrase text.
+    pub fn uses_localized_display(&self, line: &LyricLine) -> bool {
+        let Some(text) = self.localized_text_for_line(line) else {
+            return false;
+        };
+        let Some(catalog) = self.localized.as_ref() else {
+            return false;
+        };
+        !(self.lang == catalog.source_locale
+            && matches!(text.highlight, LyricHighlightPolicy::Word))
     }
 }
 
@@ -951,15 +976,52 @@ pub fn compile_with(source: &str, settings: RenderSettings, options: CompileOpti
                             }
                         }
                     }
+                    let lang = declaration
+                        .lang
+                        .clone()
+                        .or(file_lang)
+                        .unwrap_or_else(|| "und".to_owned());
+                    let localized = if let Some(from) = declaration.localized_from.as_deref() {
+                        match resolve_and_load_localized_lyric_catalog(
+                            from,
+                            &assets,
+                            options.asset_root.as_deref(),
+                        ) {
+                            Ok(catalog) => {
+                                let mut missing = false;
+                                for line in &lines {
+                                    let Some(cue_id) = line.cue_id.as_deref() else {
+                                        continue;
+                                    };
+                                    if catalog.text_for(cue_id, &lang).is_none() {
+                                        missing = true;
+                                        diagnostics.push(Diagnostic::error(
+                                            format!(
+                                                "lyric track `{track_id}` locale `{lang}` missing display text for cue_id `{cue_id}`"
+                                            ),
+                                            block.span,
+                                        ));
+                                    }
+                                }
+                                if missing {
+                                    continue;
+                                }
+                                Some(catalog)
+                            }
+                            Err(err) => {
+                                diagnostics.push(Diagnostic::error(err, block.span));
+                                continue;
+                            }
+                        }
+                    } else {
+                        None
+                    };
                     lyric_tracks.push(LyricTrack {
                         id: track_id,
                         act: block.target.clone(),
-                        lang: declaration
-                            .lang
-                            .clone()
-                            .or(file_lang)
-                            .unwrap_or_else(|| "und".to_owned()),
+                        lang,
                         lines,
+                        localized,
                     });
                 }
                 BlockKind::Orchestrate => {
@@ -1179,13 +1241,14 @@ fn resolve_audio_uri(from: &str, assets: &[Asset]) -> Option<String> {
     }
 }
 
-fn resolve_and_load_lyric_timing(
+fn resolve_asset_path(
     from: &str,
     assets: &[Asset],
     asset_root: Option<&Path>,
-) -> Result<(Option<String>, Vec<LyricLine>), String> {
+    kind: &str,
+) -> Result<PathBuf, String> {
     let uri = resolve_audio_uri(from, assets).ok_or_else(|| {
-        format!("unknown lyric source `{from}` (asset name or path)")
+        format!("unknown {kind} source `{from}` (asset name or path)")
     })?;
     let path = {
         let path = Path::new(&uri);
@@ -1199,11 +1262,29 @@ fn resolve_and_load_lyric_timing(
     };
     if !path.is_file() {
         return Err(format!(
-            "lyric timing file `{}` not found (pass compile asset_root / --project)",
+            "{kind} file `{}` not found (pass compile asset_root / --project)",
             path.display()
         ));
     }
+    Ok(path)
+}
+
+fn resolve_and_load_lyric_timing(
+    from: &str,
+    assets: &[Asset],
+    asset_root: Option<&Path>,
+) -> Result<(Option<String>, Vec<LyricLine>), String> {
+    let path = resolve_asset_path(from, assets, asset_root, "lyric timing")?;
     load_timing_json(&path).map_err(|err| err.to_string())
+}
+
+fn resolve_and_load_localized_lyric_catalog(
+    from: &str,
+    assets: &[Asset],
+    asset_root: Option<&Path>,
+) -> Result<LocalizedLyricCatalog, String> {
+    let path = resolve_asset_path(from, assets, asset_root, "localized lyric catalog")?;
+    load_localized_lyric_catalog(&path).map_err(|err| err.to_string())
 }
 
 fn parse_optional_seconds(
@@ -1710,6 +1791,54 @@ lyric for main { from chorus_lyric }
         let plan = c.plan.expect("from lyric");
         assert_eq!(plan.lyric_tracks[0].lines[0].words[0].text, "花");
         assert!((plan.lyric_tracks[0].lines[0].words[1].end - 2.0).abs() < 1e-9);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn compiles_localized_from_catalog() {
+        use std::{env, fs, time::{SystemTime, UNIX_EPOCH}};
+        let stamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let root = env::temp_dir().join(format!("muse-lyric-loc-from-{stamp}"));
+        fs::create_dir_all(root.join("assets/lyrics")).unwrap();
+        fs::write(
+            root.join("assets/lyrics/chorus.timing.json"),
+            r#"{"version":1,"lang":"ja","time_unit":"seconds","lines":[{"id":"L1","cue_id":"C1","words":[{"text":"知","start":0.0,"end":1.0},{"text":"ら","start":1.0,"end":2.0}]}]}"#,
+        )
+        .unwrap();
+        fs::write(
+            root.join("assets/lyrics/chorus.locale.json"),
+            r#"{"version":1,"source_locale":"ja","cues":[{"cue_id":"C1","localized":{"ja":{"text":"知らない","highlight":"word"},"zh-Hans":{"text":"不知道","highlight":"line"},"en":{"text":"I don't know","highlight":"line"}}}]}"#,
+        )
+        .unwrap();
+        let source = r#"timeline { act main : 0s..3s }
+tempo { bpm 120 }
+asset chorus_lyric = "assets/lyrics/chorus.timing.json";
+asset chorus_locale = "assets/lyrics/chorus.locale.json";
+lyric for main {
+  from chorus_lyric
+  localized from chorus_locale
+  lang "zh-Hans"
+}
+"#;
+        let c = compile_with(
+            source,
+            RenderSettings::default(),
+            CompileOptions {
+                asset_root: Some(root.clone()),
+            },
+        );
+        assert!(c.is_success(), "{:?}", c.diagnostics);
+        let plan = c.plan.expect("localized lyric");
+        let track = &plan.lyric_tracks[0];
+        assert_eq!(track.lang, "zh-Hans");
+        assert!(track.localized.is_some());
+        let line = &track.lines[0];
+        assert_eq!(line.cue_id.as_deref(), Some("C1"));
+        assert!(track.uses_localized_display(line));
+        assert_eq!(
+            track.localized_text_for_line(line).map(|t| t.text.as_str()),
+            Some("不知道")
+        );
         let _ = fs::remove_dir_all(root);
     }
 

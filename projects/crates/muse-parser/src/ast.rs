@@ -236,6 +236,8 @@ pub struct LyricDecl {
     pub lang: Option<String>,
     /// Asset name or path for external timing JSON (`from …`); first slice may leave unloaded.
     pub from: Option<String>,
+    /// CueId×locale display catalog (`localized from …`; docs 18/20). Independent of vocal timing.
+    pub localized_from: Option<String>,
     pub lines: Vec<LyricLineDecl>,
     /// Optional appearance block(s); compile may synthesize a default layer.
     pub layers: Vec<LyricLayerDecl>,
