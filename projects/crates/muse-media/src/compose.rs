@@ -55,7 +55,7 @@ fn parse_hex_color(raw: &str) -> Option<(u8, u8, u8)> {
 ///
 /// Prefers the GPU compositor when available (`MUSE_COMPOSITOR=auto|gpu`).
 /// Forced GPU (`MUSE_COMPOSITOR=gpu`) fails explicitly if the backend cannot init.
-/// Incoming shot `xfade` / `flash` / `iris` blend previous and current looks when active.
+/// Incoming shot `xfade` / `flash` / `iris` / `slices` blend previous and current looks when active.
 pub fn compose_frame(
     plan: &RenderPlan,
     width: u32,
@@ -69,6 +69,7 @@ pub fn compose_frame(
         let to = compose_frame_plain(plan, width, height, t, options, cache)?;
         let mut blended = match tr.kind {
             ShotTransition::Iris => iris_blend_rgb(&from, &to, tr.mix),
+            ShotTransition::Slices => slices_blend_rgb(&from, &to, tr.mix),
             _ => lerp_rgb(&from, &to, tr.mix),
         };
         if tr.flash > 0.0 {
@@ -133,6 +134,36 @@ fn iris_blend_rgb(from: &RgbImage, to: &RgbImage, mix: f32) -> RgbImage {
             - ((d - (open - feather)) / (2.0 * feather)).clamp(0.0, 1.0))
             .clamp(0.0, 1.0);
         let mask = t * t * (3.0 - 2.0 * t);
+        let pa = from.get_pixel(x, y);
+        let pb = to.get_pixel(x, y);
+        Rgb([
+            ((pa[0] as f32 * (1.0 - mask) + pb[0] as f32 * mask).round() as u8),
+            ((pa[1] as f32 * (1.0 - mask) + pb[1] as f32 * mask).round() as u8),
+            ((pa[2] as f32 * (1.0 - mask) + pb[2] as f32 * mask).round() as u8),
+        ])
+    })
+}
+
+/// Staggered horizontal slices wipe left→right over previous look.
+fn slices_blend_rgb(from: &RgbImage, to: &RgbImage, mix: f32) -> RgbImage {
+    let mix = mix.clamp(0.0, 1.0);
+    let eased = mix * mix * (3.0 - 2.0 * mix);
+    let width = from.width().min(to.width());
+    let height = from.height().min(to.height());
+    let bands = 8.0_f32;
+    let stagger = 0.45_f32;
+    let span = (1.0 - stagger).max(0.15);
+    let feather = 0.035_f32;
+    RgbImage::from_fn(width, height, |x, y| {
+        let u = (x as f32 + 0.5) / width as f32;
+        let v = (y as f32 + 0.5) / height as f32;
+        let band = (v * bands).floor().clamp(0.0, bands - 1.0);
+        let delay = band / bands * stagger;
+        let local = ((eased - delay) / span).clamp(0.0, 1.0);
+        let edge0 = local - feather;
+        let edge1 = local + feather;
+        let raw = (1.0 - ((u - edge0) / (edge1 - edge0).max(1e-4)).clamp(0.0, 1.0)).clamp(0.0, 1.0);
+        let mask = raw * raw * (3.0 - 2.0 * raw);
         let pa = from.get_pixel(x, y);
         let pb = to.get_pixel(x, y);
         Rgb([

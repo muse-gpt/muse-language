@@ -23,6 +23,7 @@ pub enum ShotTransition {
     Xfade,
     Flash,
     Iris,
+    Slices,
 }
 
 impl ShotTransition {
@@ -32,6 +33,7 @@ impl ShotTransition {
             Self::Xfade => "xfade",
             Self::Flash => "flash",
             Self::Iris => "iris",
+            Self::Slices => "slices",
         }
     }
 }
@@ -192,10 +194,11 @@ pub fn compile(source: &str, settings: RenderSettings) -> Compilation {
                                 "xfade" => ShotTransition::Xfade,
                                 "flash" => ShotTransition::Flash,
                                 "iris" => ShotTransition::Iris,
+                                "slices" => ShotTransition::Slices,
                                 other => {
                                     diagnostics.push(Diagnostic::error(
                                         format!(
-                                            "unknown shot transition `{other}` (cut|xfade|flash|iris)"
+                                            "unknown shot transition `{other}` (cut|xfade|flash|iris|slices)"
                                         ),
                                         shot.span,
                                     ));
@@ -530,7 +533,7 @@ impl RenderPlan {
         (t.clamp(0.0, 1.0) as f64 * f64::from(end)) as f32
     }
 
-    /// Incoming transition state at `t`, if an xfade/flash/iris window is active.
+    /// Incoming transition state at `t`, if a blend window (xfade/flash/iris/slices) is active.
     pub fn transition_at_normalized(&self, t: f32) -> Option<TransitionState> {
         let shot = self.shot_at_normalized(t)?;
         if matches!(shot.transition, ShotTransition::Cut) || shot.transition_bars <= 0.0 {
@@ -714,6 +717,21 @@ mod tests {
         assert_eq!(tr.kind, ShotTransition::Iris);
         assert!(tr.mix > 0.0 && tr.mix < 1.0);
         assert_eq!(tr.flash, 0.0);
+    }
+
+    #[test]
+    fn captures_slices_transition() {
+        let c = compile(
+            "timeline { act main : 0..12 shot s01 : 0..4 scene a shot s02 : 4..12 scene b slices }",
+            RenderSettings::default(),
+        );
+        let plan = c.plan.expect("valid slices");
+        assert_eq!(plan.shots[1].transition, ShotTransition::Slices);
+        assert_eq!(plan.shots[1].transition_bars, 0.5);
+        let edge = 4.15 / 12.0;
+        let tr = plan.transition_at_normalized(edge as f32).expect("slices");
+        assert_eq!(tr.kind, ShotTransition::Slices);
+        assert!(tr.mix > 0.0 && tr.mix < 1.0);
     }
 
     #[test]

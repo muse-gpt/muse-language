@@ -563,7 +563,7 @@ fn parse_timeline_body(body: &str, span: Span) -> (Vec<ActDecl>, Vec<ShotDecl>) 
     (acts, shots)
 }
 
-/// `shot id : start..end scene name [for act] [cut|xfade|flash|iris [bars]]` starting at `words[0]`.
+/// `shot id : start..end scene name [for act] [cut|xfade|flash|iris|slices [bars]]` starting at `words[0]`.
 fn parse_shot_at(words: &[&str], span: Span) -> Option<(ShotDecl, usize)> {
     if words.len() < 6 || words[0] != "shot" || words[2] != ":" || words[4] != "scene" {
         return None;
@@ -589,7 +589,7 @@ fn parse_shot_at(words: &[&str], span: Span) -> Option<(ShotDecl, usize)> {
             "cut" => {
                 index += 1;
             }
-            kind @ ("xfade" | "flash" | "iris") => {
+            kind @ ("xfade" | "flash" | "iris" | "slices") => {
                 transition = kind.to_owned();
                 index += 1;
                 let default_bars = match kind {
