@@ -13,8 +13,10 @@ anyhow.workspace = true
 image.workspace = true
 muse-ir.workspace = true
 muse-media.workspace = true
+muse-music.workspace = true
 muse-parser.workspace = true
 muse-project.workspace = true
+muse-score.workspace = true
 muse-types.workspace = true
 napi = { version = "3", default-features = true, features = ["napi4", "serde-json"] }
 napi-derive = "3"

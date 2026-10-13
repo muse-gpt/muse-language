@@ -35,6 +35,12 @@ export type RenderSettingsInput = {
     sample_rate?: number;
 };
 
+export type EncodeMp4Options = {
+    assetRoot?: string | null;
+    audioWav?: string | null;
+    maxDurationSeconds?: number | null;
+};
+
 /** Orthogonal primitives exported by `muse-napi`. */
 export type MuseNative = {
     parseSource(source: string): ParseResult;
@@ -67,6 +73,20 @@ export type MuseNative = {
         seconds: number,
         assetRoot?: string | null,
     ): string;
+    composeScore(source: string): unknown;
+    writeScoreWav(score: unknown, path: string): void;
+    writeScoreMp3(score: unknown, path: string): void;
+    writeScoreMidi(score: unknown, path: string): void;
+    writeScoreMusicxml(score: unknown, path: string): void;
+    writeScorePdf(score: unknown, path: string): void;
+    writeScoreSvg(score: unknown, path: string): void;
+    writeScoreHtml(score: unknown, path: string): void;
+    loadScoreFile(path: string): unknown;
+    encodePlanMp4(plan: unknown, outPath: string, options?: EncodeMp4Options | null): void;
+    hashFileSha256(path: string): unknown;
+    importProjectAsset(projectPath: string, inputPath: string): unknown;
+    readMediaInfo(path: string): unknown;
+    listProjectSkills(projectPath: string): unknown;
 };
 
 function platformShort(): string {

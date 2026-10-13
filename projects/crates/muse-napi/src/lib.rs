@@ -8,11 +8,15 @@ use std::{collections::HashMap, path::PathBuf};
 
 use muse_ir::{Compilation, RenderPlan, compilation_schema, compile};
 use muse_media::{
-    ComposeOptions, MixedAudioSource, compose_frame, find_ffmpeg, mix_plan_audio, probe_gpu,
-    write_placeholder_tone_wav as media_write_placeholder_tone_wav,
+    ComposeOptions, MixedAudioSource, Mp4Options, compose_frame, find_ffmpeg, mix_plan_audio,
+    probe_gpu, render_mp4_with, write_placeholder_tone_wav as media_write_placeholder_tone_wav,
 };
+use muse_music::{Score, compose as compose_score_inner};
 use muse_parser::parse;
-use muse_project::{find_entry, init as project_init, load_manifest, validate_manifest};
+use muse_project::{
+    find_entry, hash_file, import_asset, init as project_init, list_skills, load_manifest,
+    media_info, validate_manifest,
+};
 use muse_types::RenderSettings;
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
@@ -195,4 +199,108 @@ pub fn mix_plan_audio_wav(
         MixedAudioSource::Tracks => "tracks".into(),
         MixedAudioSource::PlaceholderTone => "placeholder_tone".into(),
     })
+}
+
+/// Compose a deterministic score JSON from Muse source (music domain).
+#[napi]
+pub fn compose_score(source: String) -> Result<Value> {
+    let score = compose_score_inner(&source).map_err(to_napi_err)?;
+    json_value(&score)
+}
+
+fn score_from_value(score: Value) -> Result<Score> {
+    serde_json::from_value(score).map_err(to_napi_err)
+}
+
+#[napi]
+pub fn write_score_wav(score: Value, path: String) -> Result<()> {
+    muse_music::write_wav(&score_from_value(score)?, PathBuf::from(path).as_path()).map_err(to_napi_err)
+}
+
+#[napi]
+pub fn write_score_mp3(score: Value, path: String) -> Result<()> {
+    muse_music::write_mp3(&score_from_value(score)?, PathBuf::from(path).as_path()).map_err(to_napi_err)
+}
+
+#[napi]
+pub fn write_score_midi(score: Value, path: String) -> Result<()> {
+    muse_music::write_midi(&score_from_value(score)?, PathBuf::from(path).as_path()).map_err(to_napi_err)
+}
+
+#[napi]
+pub fn write_score_musicxml(score: Value, path: String) -> Result<()> {
+    muse_music::write_musicxml(&score_from_value(score)?, PathBuf::from(path).as_path())
+        .map_err(to_napi_err)
+}
+
+#[napi]
+pub fn write_score_pdf(score: Value, path: String) -> Result<()> {
+    muse_score::write_pdf(&score_from_value(score)?, PathBuf::from(path).as_path()).map_err(to_napi_err)
+}
+
+#[napi]
+pub fn write_score_svg(score: Value, path: String) -> Result<()> {
+    muse_score::write_svg(&score_from_value(score)?, PathBuf::from(path).as_path()).map_err(to_napi_err)
+}
+
+#[napi]
+pub fn write_score_html(score: Value, path: String) -> Result<()> {
+    muse_score::write_html(&score_from_value(score)?, PathBuf::from(path).as_path()).map_err(to_napi_err)
+}
+
+/// Load MIDI/MusicXML into score JSON.
+#[napi]
+pub fn load_score_file(path: String) -> Result<Value> {
+    let score = muse_music::load_score(PathBuf::from(path).as_path()).map_err(to_napi_err)?;
+    json_value(&score)
+}
+
+#[napi(object)]
+pub struct EncodeMp4Options {
+    pub asset_root: Option<String>,
+    pub audio_wav: Option<String>,
+    pub max_duration_seconds: Option<f64>,
+}
+
+/// Encode a plan to MP4 via GPU/CPU compose + ffmpeg (encode only).
+#[napi]
+pub fn encode_plan_mp4(plan: Value, out_path: String, options: Option<EncodeMp4Options>) -> Result<()> {
+    let plan: RenderPlan = serde_json::from_value(plan).map_err(to_napi_err)?;
+    let opts = options.unwrap_or(EncodeMp4Options {
+        asset_root: None,
+        audio_wav: None,
+        max_duration_seconds: None,
+    });
+    let mp4 = Mp4Options {
+        asset_root: PathBuf::from(opts.asset_root.unwrap_or_else(|| ".".into())),
+        audio_wav: opts.audio_wav.map(PathBuf::from),
+        max_duration_seconds: opts.max_duration_seconds,
+    };
+    render_mp4_with(&plan, PathBuf::from(out_path).as_path(), mp4).map_err(to_napi_err)
+}
+
+#[napi]
+pub fn hash_file_sha256(path: String) -> Result<Value> {
+    json_value(&hash_file(PathBuf::from(path).as_path()).map_err(to_napi_err)?)
+}
+
+#[napi]
+pub fn import_project_asset(project_path: String, input_path: String) -> Result<Value> {
+    json_value(
+        &import_asset(
+            PathBuf::from(project_path).as_path(),
+            PathBuf::from(input_path).as_path(),
+        )
+        .map_err(to_napi_err)?,
+    )
+}
+
+#[napi]
+pub fn read_media_info(path: String) -> Result<Value> {
+    json_value(&media_info(PathBuf::from(path).as_path()).map_err(to_napi_err)?)
+}
+
+#[napi]
+pub fn list_project_skills(project_path: String) -> Result<Value> {
+    json_value(&list_skills(PathBuf::from(project_path).as_path()).map_err(to_napi_err)?)
 }
