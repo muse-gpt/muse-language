@@ -39,6 +39,14 @@ impl Default for RenderDefaults {
     }
 }
 
+/// Partial render override (entry or output). Missing fields inherit from the parent level.
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+pub struct RenderOverride {
+    pub width: Option<u32>,
+    pub height: Option<u32>,
+    pub frame_rate: Option<u32>,
+}
+
 fn default_width() -> u32 {
     1920
 }
@@ -53,6 +61,9 @@ fn default_frame_rate() -> u32 {
 pub struct ProjectEntry {
     pub id: String,
     pub source: String,
+    /// Optional per-entry frame size / fps (e.g. vertical 1080×1920).
+    #[serde(default)]
+    pub render: Option<RenderOverride>,
     #[serde(default)]
     pub outputs: Vec<OutputSpec>,
 }
@@ -64,6 +75,9 @@ pub struct OutputSpec {
     pub path: String,
     #[serde(default)]
     pub format: Option<String>,
+    /// Optional per-output override (wins over entry / project defaults).
+    #[serde(default)]
+    pub render: Option<RenderOverride>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

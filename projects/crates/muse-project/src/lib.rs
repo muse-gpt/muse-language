@@ -12,8 +12,40 @@ use symphonia::core::{
 mod types;
 pub use types::{
     ArtifactManifest, ArtifactRecord, AssetMeta, AssetSource, ImportSettings, OutputKind,
-    OutputSpec, ProjectEntry, ProjectInfo, ProjectManifest, SkillManifest,
+    OutputSpec, ProjectEntry, ProjectInfo, ProjectManifest, RenderDefaults, RenderOverride,
+    SkillManifest,
 };
+
+/// Merge project → entry → output render settings (later wins for set fields).
+pub fn resolve_render_settings(
+    manifest: &ProjectManifest,
+    entry: Option<&ProjectEntry>,
+    output: Option<&OutputSpec>,
+) -> RenderDefaults {
+    let mut settings = manifest.render.clone();
+    let apply = |settings: &mut RenderDefaults, overlay: &RenderOverride| {
+        if let Some(width) = overlay.width {
+            settings.width = width;
+        }
+        if let Some(height) = overlay.height {
+            settings.height = height;
+        }
+        if let Some(frame_rate) = overlay.frame_rate {
+            settings.frame_rate = frame_rate;
+        }
+    };
+    if let Some(entry) = entry {
+        if let Some(overlay) = &entry.render {
+            apply(&mut settings, overlay);
+        }
+    }
+    if let Some(output) = output {
+        if let Some(overlay) = &output.render {
+            apply(&mut settings, overlay);
+        }
+    }
+    settings
+}
 
 /// Resolve the project manifest path: prefer root `muse.von`, fall back to legacy `muse.toml`.
 pub fn manifest_path(project: &Path) -> Result<std::path::PathBuf> {
@@ -229,6 +261,37 @@ mod tests {
     fn validates_multiple_outputs() {
         let m: ProjectManifest = toml::from_str("[project]\nid='p'\nversion='0.1'\n[[entries]]\nid='e'\nsource='e.muse'\n[[entries.outputs]]\nid='a'\nkind='audio'\npath='a.wav'\n").unwrap();
         validate_manifest(&m).unwrap();
+    }
+
+    #[test]
+    fn merges_entry_and_output_render_overrides() {
+        let m: ProjectManifest = toml::from_str(
+            r#"[project]
+id = "p"
+version = "0.1"
+[render]
+width = 1920
+height = 1080
+frame_rate = 24
+[[entries]]
+id = "vertical"
+source = "v.muse"
+render = { width = 1080, height = 1920 }
+[[entries.outputs]]
+id = "video"
+kind = "video"
+path = "out.mp4"
+render = { frame_rate = 30 }
+"#,
+        )
+        .unwrap();
+        validate_manifest(&m).unwrap();
+        let entry = &m.entries[0];
+        let output = &entry.outputs[0];
+        let settings = resolve_render_settings(&m, Some(entry), Some(output));
+        assert_eq!(settings.width, 1080);
+        assert_eq!(settings.height, 1920);
+        assert_eq!(settings.frame_rate, 30);
     }
 
     #[test]

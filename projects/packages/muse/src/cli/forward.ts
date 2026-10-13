@@ -77,16 +77,24 @@ function extOf(path: string): string {
     return extname(path).replace(/^\./, "").toLowerCase();
 }
 
+type RenderOverride = {
+    width?: number | null;
+    height?: number | null;
+    frame_rate?: number | null;
+};
+
 type OutputSpec = {
     id: string;
     kind: string;
     path: string;
     format?: string | null;
+    render?: RenderOverride | null;
 };
 
 type ProjectEntry = {
     id: string;
     source: string;
+    render?: RenderOverride | null;
     outputs?: OutputSpec[];
 };
 
@@ -103,11 +111,26 @@ type PlanShape = {
     settings?: { width?: number; height?: number; frame_rate?: number; sample_rate?: number };
 };
 
-function settingsFromManifest(manifest: ProjectManifest): RenderSettingsInput {
+/** Merge project → entry → output render (later non-null fields win). */
+function resolveRenderSettings(
+    manifest: ProjectManifest,
+    entry?: ProjectEntry | null,
+    output?: OutputSpec | null,
+): RenderSettingsInput {
+    const pick = (
+        key: keyof RenderOverride,
+    ): number | undefined => {
+        const fromOutput = output?.render?.[key];
+        if (typeof fromOutput === "number") return fromOutput;
+        const fromEntry = entry?.render?.[key];
+        if (typeof fromEntry === "number") return fromEntry;
+        const fromProject = manifest.render?.[key];
+        return typeof fromProject === "number" ? fromProject : undefined;
+    };
     return {
-        width: manifest.render?.width,
-        height: manifest.render?.height,
-        frame_rate: manifest.render?.frame_rate,
+        width: pick("width"),
+        height: pick("height"),
+        frame_rate: pick("frame_rate"),
     };
 }
 
@@ -136,13 +159,15 @@ export function forwardCheck(options: ParsedOptions): number {
             const projectRoot = resolve(projectOpt);
             const manifest = loadManifest(native, projectRoot);
             const entries = resolveEntries(native, manifest, readString(options, "entry"));
-            const settings = settingsFromManifest(manifest);
             let failed = false;
             for (const entry of entries) {
                 const scriptPath = join(projectRoot, entry.source);
                 console.log(`check entry \`${entry.id}\` (${scriptPath})`);
                 const source = readFileSync(scriptPath, "utf8");
-                const result = native.compileSource(source, settings);
+                const result = native.compileSource(
+                    source,
+                    resolveRenderSettings(manifest, entry),
+                );
                 printDiagnostics(result.diagnostics);
                 if (!result.ok) {
                     failed = true;
@@ -281,11 +306,12 @@ export function forwardPreview(options: ParsedOptions): number {
             const previewOut =
                 entry.outputs?.find((o) => o.kind === "preview")?.path ??
                 join("library", entry.id, "preview");
+            const previewSpec = entry.outputs?.find((o) => o.kind === "preview");
             return runPreview({
                 native,
                 scriptPath,
                 source: readFileSync(scriptPath, "utf8"),
-                settings: settingsFromManifest(manifest),
+                settings: resolveRenderSettings(manifest, entry, previewSpec),
                 assetRoot: projectRoot,
                 outDir: join(projectRoot, previewOut),
             });
@@ -343,6 +369,7 @@ function resolveRenderTarget(options: ParsedOptions): {
         const outputId = readString(options, "outputId") ?? readString(options, "output-id");
         let format = (readString(options, "format") ?? "").toLowerCase();
         let outPath: string;
+        let outputSpec: OutputSpec | undefined;
         if (explicitOut) {
             outPath = resolve(explicitOut);
             if (!format) format = extOf(outPath) || "mp4";
@@ -352,6 +379,7 @@ function resolveRenderTarget(options: ParsedOptions): {
                 console.error(`muse: unknown output id \`${outputId}\` on entry \`${entry.id}\``);
                 return null;
             }
+            outputSpec = spec;
             outPath = join(projectRoot, spec.path);
             format =
                 format ||
@@ -361,16 +389,22 @@ function resolveRenderTarget(options: ParsedOptions): {
             if (!format) format = "mp4";
             const kind = format === "mp4" ? "video" : "audio";
             const spec = (entry.outputs ?? []).find((o) => o.kind === kind);
+            outputSpec = spec;
             outPath = spec
                 ? join(projectRoot, spec.path)
-                : join(projectRoot, "library", entry.id, `out.${format === "mp3" ? "mp3" : format === "wav" ? "wav" : "mp4"}`);
+                : join(
+                      projectRoot,
+                      "library",
+                      entry.id,
+                      `out.${format === "mp3" ? "mp3" : format === "wav" ? "wav" : "mp4"}`,
+                  );
         }
         return {
             scriptPath,
             outPath,
             format,
             assetRoot: projectRoot,
-            settings: settingsFromManifest(manifest),
+            settings: resolveRenderSettings(manifest, entry, outputSpec),
         };
     }
 
