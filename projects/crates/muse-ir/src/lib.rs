@@ -5,14 +5,23 @@ use muse_parser::{
 };
 use muse_types::{Diagnostic, RenderSettings, Span};
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeSet;
+use std::{collections::BTreeSet, path::{Path, PathBuf}};
 
+mod lyric_timing;
 mod schema;
 mod time_map;
+pub use lyric_timing::load_timing_json;
 pub use schema::{
     CompilationDocument, IrAct, IrAsset, IrOrchestrationRule, IrShot, compilation_schema,
 };
 pub use time_map::TimeMap;
+
+/// Optional compile inputs beyond render settings (doc 14 `lyric from`, asset resolution).
+#[derive(Debug, Clone, Default)]
+pub struct CompileOptions {
+    /// Project / asset root used to resolve relative `from` / asset URIs.
+    pub asset_root: Option<PathBuf>,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Act {
@@ -231,6 +240,10 @@ impl Compilation {
 }
 
 pub fn compile(source: &str, settings: RenderSettings) -> Compilation {
+    compile_with(source, settings, CompileOptions::default())
+}
+
+pub fn compile_with(source: &str, settings: RenderSettings, options: CompileOptions) -> Compilation {
     let parsed = parse(source);
     let mut diagnostics = parsed.diagnostics;
     let mut acts = Vec::new();
@@ -761,69 +774,83 @@ pub fn compile(source: &str, settings: RenderSettings) -> Compilation {
                             ));
                         }
                     }
-                    if declaration.from.is_some() && declaration.lines.is_empty() {
+                    if declaration.from.is_some() && !declaration.lines.is_empty() {
                         diagnostics.push(Diagnostic::error(
                             format!(
-                                "lyric track `{track_id}` uses `from` without inline lines; timing JSON import is not wired yet"
+                                "lyric track `{track_id}` cannot mix `from` with inline lines; choose one"
                             ),
                             block.span,
                         ));
                         continue;
                     }
-                    if declaration.lines.is_empty() {
+                    let (file_lang, mut lines) = if let Some(from) = declaration.from.as_deref() {
+                        match resolve_and_load_lyric_timing(
+                            from,
+                            &assets,
+                            options.asset_root.as_deref(),
+                        ) {
+                            Ok(loaded) => loaded,
+                            Err(err) => {
+                                diagnostics.push(Diagnostic::error(err, block.span));
+                                continue;
+                            }
+                        }
+                    } else {
+                        (None, Vec::new())
+                    };
+                    if declaration.from.is_none() {
+                        for (line_idx, line_decl) in declaration.lines.iter().enumerate() {
+                            let line_id = format!("L{}", line_idx + 1);
+                            let mut words = Vec::new();
+                            for (word_idx, word_decl) in line_decl.words.iter().enumerate() {
+                                let Some((start_pt, end_pt)) = parse_time_range(&word_decl.range)
+                                else {
+                                    diagnostics.push(Diagnostic::error(
+                                        format!(
+                                            "lyric word `{}` needs an increasing time range (e.g. 0s..0.4s)",
+                                            word_decl.text
+                                        ),
+                                        word_decl.span,
+                                    ));
+                                    continue;
+                                };
+                                let start = time_map.point_to_seconds(start_pt);
+                                let end = time_map.point_to_seconds(end_pt);
+                                if end <= start {
+                                    diagnostics.push(Diagnostic::error(
+                                        format!(
+                                            "lyric word `{}` end must be after start",
+                                            word_decl.text
+                                        ),
+                                        word_decl.span,
+                                    ));
+                                    continue;
+                                }
+                                words.push(LyricWord {
+                                    id: format!("W{}", word_idx + 1),
+                                    text: word_decl.text.clone(),
+                                    start,
+                                    end,
+                                });
+                            }
+                            if words.is_empty() {
+                                diagnostics.push(Diagnostic::error(
+                                    format!("lyric line `{line_id}` has no words"),
+                                    line_decl.span,
+                                ));
+                                continue;
+                            }
+                            lines.push(LyricLine {
+                                id: line_id,
+                                words,
+                            });
+                        }
+                    }
+                    if lines.is_empty() {
                         diagnostics.push(Diagnostic::error(
                             format!("lyric track `{track_id}` has no lines"),
                             block.span,
                         ));
-                        continue;
-                    }
-                    let mut lines = Vec::new();
-                    for (line_idx, line_decl) in declaration.lines.iter().enumerate() {
-                        let line_id = format!("L{}", line_idx + 1);
-                        let mut words = Vec::new();
-                        for (word_idx, word_decl) in line_decl.words.iter().enumerate() {
-                            let Some((start_pt, end_pt)) = parse_time_range(&word_decl.range) else {
-                                diagnostics.push(Diagnostic::error(
-                                    format!(
-                                        "lyric word `{}` needs an increasing time range (e.g. 0s..0.4s)",
-                                        word_decl.text
-                                    ),
-                                    word_decl.span,
-                                ));
-                                continue;
-                            };
-                            let start = time_map.point_to_seconds(start_pt);
-                            let end = time_map.point_to_seconds(end_pt);
-                            if end <= start {
-                                diagnostics.push(Diagnostic::error(
-                                    format!(
-                                        "lyric word `{}` end must be after start",
-                                        word_decl.text
-                                    ),
-                                    word_decl.span,
-                                ));
-                                continue;
-                            }
-                            words.push(LyricWord {
-                                id: format!("W{}", word_idx + 1),
-                                text: word_decl.text.clone(),
-                                start,
-                                end,
-                            });
-                        }
-                        if words.is_empty() {
-                            diagnostics.push(Diagnostic::error(
-                                format!("lyric line `{line_id}` has no words"),
-                                line_decl.span,
-                            ));
-                            continue;
-                        }
-                        lines.push(LyricLine {
-                            id: line_id,
-                            words,
-                        });
-                    }
-                    if lines.is_empty() {
                         continue;
                     }
                     lyric_tracks.push(LyricTrack {
@@ -832,6 +859,7 @@ pub fn compile(source: &str, settings: RenderSettings) -> Compilation {
                         lang: declaration
                             .lang
                             .clone()
+                            .or(file_lang)
                             .unwrap_or_else(|| "und".to_owned()),
                         lines,
                     });
@@ -933,6 +961,33 @@ fn resolve_audio_uri(from: &str, assets: &[Asset]) -> Option<String> {
     } else {
         None
     }
+}
+
+fn resolve_and_load_lyric_timing(
+    from: &str,
+    assets: &[Asset],
+    asset_root: Option<&Path>,
+) -> Result<(Option<String>, Vec<LyricLine>), String> {
+    let uri = resolve_audio_uri(from, assets).ok_or_else(|| {
+        format!("unknown lyric source `{from}` (asset name or path)")
+    })?;
+    let path = {
+        let path = Path::new(&uri);
+        if path.is_absolute() {
+            path.to_path_buf()
+        } else if let Some(root) = asset_root {
+            root.join(path)
+        } else {
+            path.to_path_buf()
+        }
+    };
+    if !path.is_file() {
+        return Err(format!(
+            "lyric timing file `{}` not found (pass compile asset_root / --project)",
+            path.display()
+        ));
+    }
+    load_timing_json(&path).map_err(|err| err.to_string())
 }
 
 fn parse_optional_seconds(
@@ -1376,6 +1431,36 @@ lyric for main {
         assert!((track.lines[0].words[0].start - 0.0).abs() < 1e-9);
         assert!((track.lines[0].words[0].end - 0.4).abs() < 1e-9);
         assert!((track.lines[0].words[1].start - 0.4).abs() < 1e-9);
+    }
+
+    #[test]
+    fn compiles_lyric_from_timing_json() {
+        use std::{env, fs, time::{SystemTime, UNIX_EPOCH}};
+        let stamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let root = env::temp_dir().join(format!("muse-lyric-from-{stamp}"));
+        fs::create_dir_all(root.join("assets/lyrics")).unwrap();
+        fs::write(
+            root.join("assets/lyrics/chorus.timing.json"),
+            r#"{"version":1,"lang":"zh-Hans","time_unit":"seconds","lines":[{"words":[{"text":"花","start":1.0,"end":1.5},{"text":"园","start":1.5,"end":2.0}]}]}"#,
+        )
+        .unwrap();
+        let source = r#"timeline { act main : 0s..3s }
+tempo { bpm 120 }
+asset chorus_lyric = "assets/lyrics/chorus.timing.json";
+lyric for main { from chorus_lyric }
+"#;
+        let c = compile_with(
+            source,
+            RenderSettings::default(),
+            CompileOptions {
+                asset_root: Some(root.clone()),
+            },
+        );
+        assert!(c.is_success(), "{:?}", c.diagnostics);
+        let plan = c.plan.expect("from lyric");
+        assert_eq!(plan.lyric_tracks[0].lines[0].words[0].text, "花");
+        assert!((plan.lyric_tracks[0].lines[0].words[1].end - 2.0).abs() < 1e-9);
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]

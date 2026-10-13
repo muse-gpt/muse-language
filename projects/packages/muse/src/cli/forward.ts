@@ -167,6 +167,7 @@ export function forwardCheck(options: ParsedOptions): number {
                 const result = native.compileSource(
                     source,
                     resolveRenderSettings(manifest, entry),
+                    projectRoot,
                 );
                 printDiagnostics(result.diagnostics);
                 if (!result.ok) {
@@ -246,7 +247,7 @@ function runPreview(args: {
     outDir: string;
 }): number {
     const { native, scriptPath, source, settings, assetRoot, outDir } = args;
-    const compiled = native.compileSource(source, settings);
+    const compiled = native.compileSource(source, settings, assetRoot);
     if (!compiled.ok || !compiled.plan) {
         printDiagnostics(compiled.diagnostics);
         return 1;
@@ -444,7 +445,7 @@ export function forwardRender(options: ParsedOptions): number {
         }
 
         if (format === "mp4") {
-            const compiled = native.compileSource(source, settings);
+            const compiled = native.compileSource(source, settings, assetRoot);
             if (!compiled.ok || !compiled.plan) {
                 printDiagnostics(compiled.diagnostics);
                 return 1;

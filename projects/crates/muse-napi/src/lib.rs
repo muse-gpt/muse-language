@@ -6,7 +6,7 @@
 
 use std::{collections::HashMap, path::PathBuf};
 
-use muse_ir::{Compilation, RenderPlan, compilation_schema, compile};
+use muse_ir::{Compilation, CompileOptions, RenderPlan, compilation_schema, compile_with};
 use muse_media::{
     ComposeOptions, MixedAudioSource, Mp4Options, compose_frame, find_ffmpeg, mix_plan_audio,
     probe_gpu, render_mp4_with, write_placeholder_tone_wav as media_write_placeholder_tone_wav,
@@ -89,8 +89,18 @@ fn settings_from_input(input: Option<RenderSettingsInput>) -> RenderSettings {
 }
 
 #[napi]
-pub fn compile_source(source: String, settings: Option<RenderSettingsInput>) -> Result<CompileResult> {
-    let compilation: Compilation = compile(&source, settings_from_input(settings));
+pub fn compile_source(
+    source: String,
+    settings: Option<RenderSettingsInput>,
+    asset_root: Option<String>,
+) -> Result<CompileResult> {
+    let compilation: Compilation = compile_with(
+        &source,
+        settings_from_input(settings),
+        CompileOptions {
+            asset_root: asset_root.map(PathBuf::from),
+        },
+    );
     Ok(CompileResult {
         ok: compilation.is_success(),
         diagnostics: json_value(&compilation.diagnostics)?,

@@ -44,7 +44,11 @@ export type EncodeMp4Options = {
 /** Orthogonal primitives exported by `muse-napi`. */
 export type MuseNative = {
     parseSource(source: string): ParseResult;
-    compileSource(source: string, settings?: RenderSettingsInput | null): CompileResult;
+    compileSource(
+        source: string,
+        settings?: RenderSettingsInput | null,
+        assetRoot?: string | null,
+    ): CompileResult;
     compilationSchemaJson(): unknown;
     loadProjectManifest(projectPath: string): unknown;
     validateProjectManifest(manifest: unknown): void;
