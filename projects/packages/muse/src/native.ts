@@ -53,6 +53,8 @@ export type MuseNative = {
     loadProjectManifest(projectPath: string): unknown;
     validateProjectManifest(manifest: unknown): void;
     findProjectEntry(manifest: unknown, entryId?: string | null): unknown;
+    /** Validate assets/prefabs VON definitions; returns prefab ids. */
+    checkProjectPrefabs(projectPath: string): string[];
     initProject(path: string): void;
     probeGpuStatus(): {
         status: string;

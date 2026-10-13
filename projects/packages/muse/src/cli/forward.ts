@@ -189,6 +189,17 @@ export function forwardCheck(options: ParsedOptions): number {
                     }
                 }
             }
+            try {
+                const prefabIds = native.checkProjectPrefabs(projectRoot);
+                if (prefabIds.length > 0) {
+                    console.log(
+                        `check prefabs (${prefabIds.length}): ${prefabIds.join(", ")}`,
+                    );
+                }
+            } catch (err) {
+                console.error(`muse: ${err instanceof Error ? err.message : err}`);
+                failed = true;
+            }
             if (failed) return 1;
             console.log(`project ok (${projectRoot})`);
             return 0;

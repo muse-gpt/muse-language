@@ -9,7 +9,13 @@ use symphonia::core::{
     io::MediaSourceStream,
     meta::MetadataOptions,
 };
+mod prefab;
 mod types;
+pub use prefab::{
+    KNOWN_COMPONENT_TYPES, KNOWN_PORT_TYPES, PrefabComponent, PrefabDefinition,
+    PrefabNestedInstance, PrefabObject, PrefabPort, check_project_prefabs, discover_prefab_paths,
+    load_prefab_von, validate_prefab,
+};
 pub use types::{
     ArtifactManifest, ArtifactRecord, AssetMeta, AssetSource, ImportSettings, OutputKind,
     OutputSpec, ProjectEntry, ProjectInfo, ProjectManifest, RenderDefaults, RenderOverride,

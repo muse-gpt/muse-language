@@ -14,8 +14,8 @@ use muse_media::{
 use muse_music::{Score, compose as compose_score_inner};
 use muse_parser::parse;
 use muse_project::{
-    find_entry, hash_file, import_asset, init as project_init, list_skills, load_manifest,
-    media_info, validate_manifest,
+    check_project_prefabs as check_prefabs_under_project, find_entry, hash_file, import_asset,
+    init as project_init, list_skills, load_manifest, media_info, validate_manifest,
 };
 use muse_types::RenderSettings;
 use napi::bindgen_prelude::*;
@@ -128,6 +128,15 @@ pub fn validate_project_manifest(manifest: Value) -> Result<()> {
     let manifest: muse_project::ProjectManifest =
         serde_json::from_value(manifest).map_err(to_napi_err)?;
     validate_manifest(&manifest).map_err(to_napi_err)
+}
+
+/// Load and validate `assets/prefabs/**/*.von` (true VON prefab definitions).
+/// Returns the list of prefab ids on success.
+#[napi]
+pub fn check_project_prefabs(project_path: String) -> Result<Vec<String>> {
+    let defs =
+        check_prefabs_under_project(PathBuf::from(project_path).as_path()).map_err(to_napi_err)?;
+    Ok(defs.into_iter().map(|d| d.id).collect())
 }
 
 /// Resolve an entry from a manifest JSON object.
