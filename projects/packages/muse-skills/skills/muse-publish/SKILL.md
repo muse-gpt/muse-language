@@ -28,6 +28,12 @@ description: 面向交付与发布准备。用户要检查、预览、导出、�
 5. 需要工程脚手架时用 `muse init`；本地 skill 清单可用 `muse skill list` / `muse skill validate`；集成侧可用 `muse mcp serve`。
 6. 写交付说明：脚本版本、素材侧车 `.muse.meta`、已知限制、复现命令。
 
+## 多语言与多画幅交付
+
+多版本交付时读 [release-context.md](references/release-context.md)。把发行任务看作入口、显式上下文与 outputs；PrefabVariant 是资产差异，不能将二者混用或要求用户复制一套完整工程。
+
+核对日语演唱轨与各显示语言、全长/短剪辑时间映射、字体与布局、画面字效/封面/尾卡的本地化。工具未提供 job 接口时使用已验证命令并记录对应任务，不编造 `--job`、`--locale` 或批量发布语法。
+
 ## 硬约束
 
 - 必须先 `check` 再交付；不要在仍有 error 时宣称“可以发布”。
