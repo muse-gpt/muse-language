@@ -614,6 +614,16 @@ impl RenderPlan {
         (t.clamp(0.0, 1.0) as f64 * f64::from(end)) as f32
     }
 
+    /// Normalized plan time for absolute frame index using wall-clock `index / fps`.
+    ///
+    /// Truncated renders must use this (not `index / (output_frames - 1)`) so a short
+    /// preview covers the start of the plan rather than resampling the whole timeline.
+    pub fn normalized_time_at_frame(&self, frame_index: usize) -> f32 {
+        let fps = self.settings.frame_rate.max(1) as f64;
+        let duration = self.duration_seconds.max(1.0 / fps);
+        ((frame_index as f64 / fps) / duration).clamp(0.0, 1.0) as f32
+    }
+
     /// Incoming transition state at `t`, if a blend window (xfade/flash/iris/slices) is active.
     pub fn transition_at_normalized(&self, t: f32) -> Option<TransitionState> {
         let shot = self.shot_at_normalized(t)?;
@@ -809,6 +819,21 @@ mod tests {
         let plan = c.plan.expect("valid stamp");
         assert_eq!(plan.visuals[0].stamp, Some(0.9));
         assert_eq!(plan.visuals[0].stamp_label.as_deref(), Some("残"));
+    }
+
+    #[test]
+    fn normalized_time_at_frame_is_wall_clock() {
+        let mut settings = RenderSettings::default();
+        settings.frame_rate = 24;
+        let c = compile(
+            "timeline { act main : 0..100 } tempo { at 0 bpm 120 }",
+            settings,
+        );
+        let plan = c.plan.expect("valid plan");
+        // 24 frames = 1s; must not jump to end of plan.
+        let t = plan.normalized_time_at_frame(24);
+        assert!(t < 0.05, "expected early plan time, got {t}");
+        assert!((plan.normalized_time_at_frame(0) - 0.0).abs() < 1e-6);
     }
 
     #[test]

@@ -75,7 +75,8 @@ pub fn render_preview_with(plan: &RenderPlan, out: &Path, options: PreviewOption
     let mut cache = HashMap::new();
     let mut active_shots = Vec::new();
     for index in 0..frames {
-        let t = index as f32 / frames.saturating_sub(1).max(1) as f32;
+        // Wall-clock sampling: truncated previews cover plan start, not a full-timeline squeeze.
+        let t = plan.normalized_time_at_frame(index);
         if let Some(shot) = plan.shot_at_normalized(t) {
             if !active_shots.iter().any(|id| id == &shot.id) {
                 active_shots.push(shot.id.clone());
@@ -142,6 +143,41 @@ mod tests {
         assert_eq!(manifest.background_color.as_deref(), Some("#0b1524"));
         let png = image::open(out.join("frame-0000.png")).unwrap().to_rgb8();
         assert_eq!(*png.get_pixel(0, 0), Rgb([0x0b, 0x15, 0x24]));
+        let _ = fs::remove_dir_all(root);
+        unsafe {
+            env::remove_var("MUSE_COMPOSITOR");
+        }
+    }
+
+    #[test]
+    fn truncated_preview_keeps_wall_clock_shots() {
+        unsafe {
+            env::set_var("MUSE_COMPOSITOR", "cpu");
+        }
+        // Long plan: late shot must not appear when preview is capped to ~1s of frames.
+        let plan = muse_ir::compile(
+            "timeline { act main : 0..100 shot early : 0..4 scene a shot late : 80..90 scene b } tempo { at 0 bpm 120 }",
+            Default::default(),
+        )
+        .plan
+        .expect("valid plan");
+        assert!(plan.duration_seconds > 50.0);
+        let stamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let root = env::temp_dir().join(format!("muse-media-clock-{stamp}"));
+        let out = root.join("preview");
+        let manifest = render_preview_with(
+            &plan,
+            &out,
+            PreviewOptions {
+                scale: 0.05,
+                max_frames: plan.settings.frame_rate.max(1) as usize, // ~1s
+                max_audio_seconds: 1.0,
+                asset_root: root.clone(),
+            },
+        )
+        .unwrap();
+        assert_eq!(manifest.active_shots, ["early"]);
+        assert!((manifest.rendered_duration_seconds - 1.0).abs() < 0.05);
         let _ = fs::remove_dir_all(root);
         unsafe {
             env::remove_var("MUSE_COMPOSITOR");

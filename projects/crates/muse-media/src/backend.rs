@@ -8,7 +8,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use crate::compose::{ComposeOptions, compose_frame, plan_background_rgb, plan_has_images};
+use crate::compose::{ComposeOptions, compose_frame};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OutputFormat {
@@ -113,93 +113,59 @@ pub fn render_mp4_with(plan: &RenderPlan, output: &Path, options: Mp4Options) ->
         silence
     };
 
-    if plan_has_images(plan) {
-        let frames_dir = tmp.join("frames");
-        fs::create_dir_all(&frames_dir)?;
-        let frames = ((duration * plan.settings.frame_rate as f64).ceil() as usize).max(1);
-        let compose = ComposeOptions {
-            asset_root: if options.asset_root.as_os_str().is_empty() {
-                PathBuf::from(".")
-            } else {
-                options.asset_root.clone()
-            },
-        };
-        let mut cache = HashMap::new();
-        for index in 0..frames {
-            let t = index as f32 / frames.saturating_sub(1).max(1) as f32;
-            let image = compose_frame(
-                plan,
-                plan.settings.width,
-                plan.settings.height,
-                t,
-                &compose,
-                &mut cache,
-            )?;
-            image.save(frames_dir.join(format!("frame-{index:04}.png")))?;
-        }
-        let pattern = frames_dir.join("frame-%04d.png");
-        let fr = plan.settings.frame_rate.to_string();
-        let dur = format!("{duration:.3}");
-        run_ffmpeg(
-            &ffmpeg,
-            &[
-                "-hide_banner",
-                "-loglevel",
-                "error",
-                "-y",
-                "-framerate",
-                &fr,
-                "-i",
-                pattern.to_str().context("frame pattern is not valid UTF-8")?,
-                "-i",
-                audio_input.to_str().context("audio path is not valid UTF-8")?,
-                "-t",
-                &dur,
-                "-c:v",
-                "libx264",
-                "-pix_fmt",
-                "yuv420p",
-                "-c:a",
-                "aac",
-                "-shortest",
-                output.to_str().context("output path is not valid UTF-8")?,
-            ],
+    // Always compose through the plan (FX / shots / grade), even when there are no images.
+    // Truncated `--max-duration` keeps wall-clock time via `normalized_time_at_frame`.
+    let frames_dir = tmp.join("frames");
+    fs::create_dir_all(&frames_dir)?;
+    let frames = ((duration * plan.settings.frame_rate as f64).ceil() as usize).max(1);
+    let compose = ComposeOptions {
+        asset_root: if options.asset_root.as_os_str().is_empty() {
+            PathBuf::from(".")
+        } else {
+            options.asset_root.clone()
+        },
+    };
+    let mut cache = HashMap::new();
+    for index in 0..frames {
+        let t = plan.normalized_time_at_frame(index);
+        let image = compose_frame(
+            plan,
+            plan.settings.width,
+            plan.settings.height,
+            t,
+            &compose,
+            &mut cache,
         )?;
-    } else {
-        let (r, g, b, _) = plan_background_rgb(plan);
-        let color = format!("0x{r:02x}{g:02x}{b:02x}");
-        let size = format!("{}x{}", plan.settings.width, plan.settings.height);
-        let video = format!(
-            "color=c={color}:s={size}:r={}:d={}",
-            plan.settings.frame_rate, duration
-        );
-        let dur = format!("{duration:.3}");
-        run_ffmpeg(
-            &ffmpeg,
-            &[
-                "-hide_banner",
-                "-loglevel",
-                "error",
-                "-y",
-                "-f",
-                "lavfi",
-                "-i",
-                &video,
-                "-i",
-                audio_input.to_str().context("audio path is not valid UTF-8")?,
-                "-t",
-                &dur,
-                "-c:v",
-                "libx264",
-                "-pix_fmt",
-                "yuv420p",
-                "-c:a",
-                "aac",
-                "-shortest",
-                output.to_str().context("output path is not valid UTF-8")?,
-            ],
-        )?;
+        image.save(frames_dir.join(format!("frame-{index:04}.png")))?;
     }
+    let pattern = frames_dir.join("frame-%04d.png");
+    let fr = plan.settings.frame_rate.to_string();
+    let dur = format!("{duration:.3}");
+    run_ffmpeg(
+        &ffmpeg,
+        &[
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-y",
+            "-framerate",
+            &fr,
+            "-i",
+            pattern.to_str().context("frame pattern is not valid UTF-8")?,
+            "-i",
+            audio_input.to_str().context("audio path is not valid UTF-8")?,
+            "-t",
+            &dur,
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-c:a",
+            "aac",
+            "-shortest",
+            output.to_str().context("output path is not valid UTF-8")?,
+        ],
+    )?;
 
     let _ = fs::remove_dir_all(&tmp);
     Ok(())
