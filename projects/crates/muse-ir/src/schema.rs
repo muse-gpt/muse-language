@@ -12,16 +12,21 @@ pub struct IrAct {
     pub name: String,
     pub start_bar: u32,
     pub end_bar: u32,
+    pub start_seconds: f64,
+    pub end_seconds: f64,
 }
 #[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct IrShot {
     pub id: String,
     pub start_bar: u32,
     pub end_bar: u32,
+    pub start_seconds: f64,
+    pub end_seconds: f64,
     pub scene: String,
     pub target: Option<String>,
     pub transition: String,
     pub transition_bars: f32,
+    pub transition_seconds: f32,
     pub remap_mode: Option<String>,
     pub remap_source: Option<String>,
 }
@@ -74,6 +79,8 @@ impl From<&Act> for IrAct {
             name: value.name.clone(),
             start_bar: value.start_bar,
             end_bar: value.end_bar,
+            start_seconds: value.start_seconds,
+            end_seconds: value.end_seconds,
         }
     }
 }
@@ -83,10 +90,13 @@ impl From<&Shot> for IrShot {
             id: value.id.clone(),
             start_bar: value.start_bar,
             end_bar: value.end_bar,
+            start_seconds: value.start_seconds,
+            end_seconds: value.end_seconds,
             scene: value.scene.clone(),
             target: value.target.clone(),
             transition: value.transition.as_str().into(),
             transition_bars: value.transition_bars,
+            transition_seconds: value.transition_seconds,
             remap_mode: value.remap.as_ref().map(|r| r.mode.as_str().into()),
             remap_source: value.remap.as_ref().map(|r| r.source.clone()),
         }

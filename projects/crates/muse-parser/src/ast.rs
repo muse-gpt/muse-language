@@ -54,28 +54,54 @@ pub enum BlockContent {
     Orchestrate(OrchestrationDecl),
     Visual { elements: Vec<VisualDecl> },
     Music(MusicDecl),
+    Audio { tracks: Vec<AudioTrackDecl> },
+}
+
+/// Timeline / shot endpoint unit. Bare numbers default to [`TimeUnit::Bars`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TimeUnit {
+    Bars,
+    Beats,
+    Seconds,
+}
+
+/// A numeric time with an explicit or defaulted unit (`8`, `8bar`, `8b`, `12.5s`).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+pub struct TimePoint {
+    pub value: f64,
+    pub unit: TimeUnit,
+}
+
+impl TimePoint {
+    pub fn bars(value: f64) -> Self {
+        Self {
+            value,
+            unit: TimeUnit::Bars,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ActDecl {
     pub name: String,
-    pub start_bar: u32,
-    pub end_bar: u32,
+    pub start: TimePoint,
+    pub end: TimePoint,
     pub span: Span,
 }
 
-/// Timed cut: `shot id : bars scene name [for act] [transition] [freeze|reverse|melt source]`.
+/// Timed cut: `shot id : range scene name [for act] [transition] [freeze|reverse|melt source]`.
 #[derive(Debug, Clone, Serialize)]
 pub struct ShotDecl {
     pub id: String,
-    pub start_bar: u32,
-    pub end_bar: u32,
+    pub start: TimePoint,
+    pub end: TimePoint,
     pub scene: String,
     pub target: Option<String>,
     /// Incoming transition kind (`cut`, `xfade`, `flash`, `iris`, `slices`).
     pub transition: String,
-    /// Transition length in bars (0 = instantaneous cut).
-    pub transition_bars: String,
+    /// Transition length token (`0.5`, `0.5bar`, `2b`, `0.25s`).
+    pub transition_len: String,
     /// Optional time remap mode (`freeze`, `reverse`, `melt`).
     pub remap_mode: Option<String>,
     /// Source shot id for remap (immutable reference).
@@ -184,12 +210,32 @@ pub struct MeterDecl {
     pub span: Span,
 }
 
+/// `audio for act { track id { ... } }` track declaration.
+#[derive(Debug, Clone, Serialize)]
+pub struct AudioTrackDecl {
+    pub id: String,
+    /// Asset name or project-relative path from `from …`.
+    pub from: String,
+    pub role: String,
+    pub offset: Option<String>,
+    pub clip: Option<String>,
+    /// Gain in dB when `gain` was written.
+    pub gain_db: Option<f64>,
+    /// Linear amplitude when `amplitude` was written.
+    pub amplitude: Option<f64>,
+    pub fade_in: Option<String>,
+    pub fade_out: Option<String>,
+    pub tail_silence: Option<String>,
+    pub span: Span,
+}
+
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub enum BlockKind {
     Intent,
     Timeline,
     Tempo,
     Music,
+    Audio,
     Visual,
     Orchestrate,
     /// Deprecated compatibility spelling. New scripts should use `orchestrate`.

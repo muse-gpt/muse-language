@@ -1,22 +1,29 @@
-//! Semantic validation and render-plan construction for Muse scripts.
-use muse_parser::{BlockContent, BlockKind, Declaration, ShotDecl, VisualDecl, parse};
+﻿//! Semantic validation and render-plan construction for Muse scripts.
+use muse_parser::{
+    BlockContent, BlockKind, Declaration, ShotDecl, VisualDecl, parse, parse_time_point,
+    parse_time_range,
+};
 use muse_types::{Diagnostic, RenderSettings, Span};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
 mod schema;
+mod time_map;
 pub use schema::{
     CompilationDocument, IrAct, IrAsset, IrOrchestrationRule, IrShot, compilation_schema,
 };
+pub use time_map::TimeMap;
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Act {
     pub name: String,
     pub start_bar: u32,
     pub end_bar: u32,
+    pub start_seconds: f64,
+    pub end_seconds: f64,
 }
 /// Incoming transition at a shot boundary.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ShotTransition {
     Cut,
@@ -39,7 +46,7 @@ impl ShotTransition {
 }
 
 /// Time remap applied while a shot is active (references another shot id).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ShotRemapMode {
     Freeze,
@@ -57,32 +64,36 @@ impl ShotRemapMode {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ShotRemap {
     pub mode: ShotRemapMode,
     pub source: String,
 }
 
-/// Timed cut in the render plan (`shot id : bars scene name [xfade bars] [remap source]`).
-#[derive(Debug, Clone, Serialize)]
+/// Timed cut in the render plan (`shot id : range scene name [xfade …] [remap source]`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Shot {
     pub id: String,
     pub start_bar: u32,
     pub end_bar: u32,
+    pub start_seconds: f64,
+    pub end_seconds: f64,
     pub scene: String,
     pub target: Option<String>,
     pub transition: ShotTransition,
-    /// Transition length in bars (incoming from the previous shot).
+    /// Transition length in bars (incoming from the previous shot; schema/compat).
     pub transition_bars: f32,
+    /// Transition length in seconds (authoritative for blend windows).
+    pub transition_seconds: f32,
     /// Optional freeze/reverse/melt against an existing shot id.
     pub remap: Option<ShotRemap>,
 }
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Asset {
     pub name: String,
     pub uri: String,
 }
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OrchestrationRule {
     pub target: String,
     pub mappings: Vec<String>,
@@ -91,7 +102,7 @@ pub struct OrchestrationRule {
     pub style_references: Vec<String>,
     pub transition_strategy: Option<String>,
 }
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VisualLayer {
     pub target: Option<String>,
     /// Optional scene tag from `visual for act scene name { ... }`.
@@ -116,20 +127,71 @@ pub struct VisualLayer {
     /// Optional stamp glyph label (`fx stamp "字"`); rasterized via system font in muse-media.
     pub stamp_label: Option<String>,
 }
-#[derive(Debug, Clone, Serialize)]
+
+/// Role of a bound audio track (doc 16).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AudioRole {
+    Song,
+    Guide,
+    Sfx,
+    Stem,
+}
+
+impl AudioRole {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Song => "song",
+            Self::Guide => "guide",
+            Self::Sfx => "sfx",
+            Self::Stem => "stem",
+        }
+    }
+}
+
+/// How preview/render should obtain PCM when no external mux override is supplied.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AudioSourceKind {
+    /// One or more `audio { track … }` bindings.
+    Tracks,
+    /// Development placeholder tone (no tracks declared).
+    PlaceholderTone,
+}
+
+/// Bound audio track after compile (paths project-relative; PCM resolved at render).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AudioTrack {
+    pub id: String,
+    pub role: AudioRole,
+    pub uri: String,
+    pub file_start: f64,
+    pub file_end: Option<f64>,
+    pub timeline_offset: f64,
+    pub gain_linear: f64,
+    pub fade_in: f64,
+    pub fade_out: f64,
+    pub tail_silence: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RenderPlan {
     pub settings: RenderSettings,
     pub duration_seconds: f64,
+    /// Compile-time clock used for bars/beats ↔ seconds (constant tempo first slice).
+    pub time_map: TimeMap,
     pub acts: Vec<Act>,
     pub shots: Vec<Shot>,
     pub assets: Vec<Asset>,
+    pub audio_source: AudioSourceKind,
+    pub audio_tracks: Vec<AudioTrack>,
     pub visual_layers: usize,
     pub visuals: Vec<VisualLayer>,
     pub transitions: usize,
     pub intents: Vec<String>,
     pub orchestration: Vec<OrchestrationRule>,
 }
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Compilation {
     pub plan: Option<RenderPlan>,
     pub diagnostics: Vec<Diagnostic>,
@@ -152,12 +214,50 @@ pub fn compile(source: &str, settings: RenderSettings) -> Compilation {
     let mut shot_ids = BTreeSet::new();
     let mut assets = Vec::new();
     let mut names = BTreeSet::new();
-    let mut bpm = 120.0;
     let mut visuals = 0;
     let mut visual_layers = Vec::new();
     let mut transitions = 0;
     let mut intents = Vec::new();
     let mut orchestration = Vec::new();
+    let mut audio_tracks = Vec::new();
+    let mut audio_ids = BTreeSet::new();
+
+    // Pre-scan tempo/meter so timeline conversion sees the full-file clock (ADR 0006 / doc 13).
+    let mut bpm = 120.0;
+    let mut beats_per_bar = 4u32;
+    for declaration in &parsed.script.declarations {
+        match declaration {
+            Declaration::Block(block) => match block.kind {
+                BlockKind::Tempo => {
+                    if let BlockContent::Tempo { events } = &block.content {
+                        for event in events {
+                            if event.bpm > 0.0 {
+                                bpm = event.bpm;
+                            }
+                        }
+                    }
+                }
+                BlockKind::Music => {
+                    if let BlockContent::Music(music) = &block.content {
+                        if let Some(meter) = &music.meter {
+                            if meter.beat_unit != 4 {
+                                diagnostics.push(Diagnostic::error(
+                                    "meter beat unit other than 4 is not supported yet",
+                                    meter.span,
+                                ));
+                            } else {
+                                beats_per_bar = u32::from(meter.beats.max(1));
+                            }
+                        }
+                    }
+                }
+                _ => {}
+            },
+            _ => {}
+        }
+    }
+    let time_map = TimeMap::new(bpm, beats_per_bar);
+
     for declaration in parsed.script.declarations {
         match declaration {
             Declaration::Asset { name, uri, span } => {
@@ -179,23 +279,28 @@ pub fn compile(source: &str, settings: RenderSettings) -> Compilation {
                     } = &block.content
                     {
                         for act in declarations {
-                            if act.start_bar < act.end_bar {
+                            if act.start.value < act.end.value && act.start.unit == act.end.unit {
+                                let start_seconds = time_map.point_to_seconds(act.start);
+                                let end_seconds = time_map.point_to_seconds(act.end);
                                 acts.push(Act {
                                     name: act.name.clone(),
-                                    start_bar: act.start_bar,
-                                    end_bar: act.end_bar,
+                                    start_bar: bars_u32(time_map.point_to_bars(act.start)),
+                                    end_bar: bars_u32(time_map.point_to_bars(act.end)),
+                                    start_seconds,
+                                    end_seconds,
                                 });
                             } else {
                                 diagnostics.push(Diagnostic::error(
-                                    "act range must be increasing integers",
+                                    "act range must be increasing and use one time unit",
                                     act.span,
                                 ));
                             }
                         }
                         for shot in shot_decls {
-                            if shot.start_bar >= shot.end_bar {
+                            if shot.start.value >= shot.end.value || shot.start.unit != shot.end.unit
+                            {
                                 diagnostics.push(Diagnostic::error(
-                                    "shot range must be increasing integers",
+                                    "shot range must be increasing and use one time unit",
                                     shot.span,
                                 ));
                                 continue;
@@ -232,23 +337,28 @@ pub fn compile(source: &str, settings: RenderSettings) -> Compilation {
                                     ShotTransition::Cut
                                 }
                             };
-                            let transition_bars = match shot.transition_bars.trim().parse::<f32>() {
-                                Ok(value) if value >= 0.0 => value,
-                                Ok(_) => {
-                                    diagnostics.push(Diagnostic::error(
-                                        "transition bars must be non-negative",
-                                        shot.span,
-                                    ));
-                                    0.0
-                                }
-                                Err(_) => {
-                                    diagnostics.push(Diagnostic::error(
-                                        "transition bars must be a number",
-                                        shot.span,
-                                    ));
-                                    0.0
-                                }
-                            };
+                            let (transition_bars, transition_seconds) =
+                                match parse_time_point(shot.transition_len.trim()) {
+                                    Some(point) if point.value >= 0.0 => {
+                                        let secs = time_map.point_to_seconds(point) as f32;
+                                        let bars = time_map.point_to_bars(point) as f32;
+                                        (bars, secs)
+                                    }
+                                    Some(_) => {
+                                        diagnostics.push(Diagnostic::error(
+                                            "transition length must be non-negative",
+                                            shot.span,
+                                        ));
+                                        (0.0, 0.0)
+                                    }
+                                    None => {
+                                        diagnostics.push(Diagnostic::error(
+                                            "transition length must be a time literal (e.g. 0.5, 0.5bar, 2b, 0.25s)",
+                                            shot.span,
+                                        ));
+                                        (0.0, 0.0)
+                                    }
+                                };
                             let remap = match (
                                 shot.remap_mode.as_deref().map(str::trim),
                                 shot.remap_source.as_deref().map(str::trim),
@@ -282,14 +392,19 @@ pub fn compile(source: &str, settings: RenderSettings) -> Compilation {
                                     None
                                 }
                             };
+                            let start_seconds = time_map.point_to_seconds(shot.start);
+                            let end_seconds = time_map.point_to_seconds(shot.end);
                             shots.push(Shot {
                                 id: shot.id.clone(),
-                                start_bar: shot.start_bar,
-                                end_bar: shot.end_bar,
+                                start_bar: bars_u32(time_map.point_to_bars(shot.start)),
+                                end_bar: bars_u32(time_map.point_to_bars(shot.end)),
+                                start_seconds,
+                                end_seconds,
                                 scene: shot.scene.clone(),
                                 target: shot.target.clone(),
                                 transition,
                                 transition_bars,
+                                transition_seconds,
                                 remap,
                             });
                         }
@@ -299,9 +414,7 @@ pub fn compile(source: &str, settings: RenderSettings) -> Compilation {
                 BlockKind::Tempo => {
                     if let BlockContent::Tempo { events } = &block.content {
                         for event in events {
-                            if event.bpm > 0.0 {
-                                bpm = event.bpm;
-                            } else {
+                            if event.bpm <= 0.0 {
                                 diagnostics.push(Diagnostic::error("BPM must be positive", event.span));
                             }
                         }
@@ -453,6 +566,152 @@ pub fn compile(source: &str, settings: RenderSettings) -> Compilation {
                         stamp_label,
                     });
                 }
+                BlockKind::Audio => {
+                    if let Some(target) = &block.target
+                        && !acts.iter().any(|a| a.name == *target)
+                    {
+                        diagnostics.push(Diagnostic::error(
+                            format!("unknown audio target `{target}`"),
+                            block.span,
+                        ));
+                    }
+                    let BlockContent::Audio { tracks } = &block.content else {
+                        continue;
+                    };
+                    for track in tracks {
+                        if track.from.trim().is_empty() {
+                            diagnostics.push(Diagnostic::error(
+                                format!("audio track `{}` requires `from`", track.id),
+                                track.span,
+                            ));
+                            continue;
+                        }
+                        if !audio_ids.insert(track.id.clone()) {
+                            diagnostics.push(Diagnostic::error(
+                                format!("duplicate audio track id `{}`", track.id),
+                                track.span,
+                            ));
+                            continue;
+                        }
+                        if track.gain_db.is_some() && track.amplitude.is_some() {
+                            diagnostics.push(Diagnostic::error(
+                                format!(
+                                    "audio track `{}` cannot set both `gain` and `amplitude`",
+                                    track.id
+                                ),
+                                track.span,
+                            ));
+                            continue;
+                        }
+                        let Some(uri) = resolve_audio_uri(&track.from, &assets) else {
+                            diagnostics.push(Diagnostic::error(
+                                format!(
+                                    "unknown audio source `{}` on track `{}` (asset name or path)",
+                                    track.from, track.id
+                                ),
+                                track.span,
+                            ));
+                            continue;
+                        };
+                        let role = match track.role.trim().to_ascii_lowercase().as_str() {
+                            "song" | "" => AudioRole::Song,
+                            "guide" => AudioRole::Guide,
+                            "sfx" => AudioRole::Sfx,
+                            "stem" => AudioRole::Stem,
+                            other => {
+                                diagnostics.push(Diagnostic::error(
+                                    format!(
+                                        "unknown audio role `{other}` on track `{}` (song|guide|sfx|stem)",
+                                        track.id
+                                    ),
+                                    track.span,
+                                ));
+                                AudioRole::Song
+                            }
+                        };
+                        let timeline_offset = parse_optional_seconds(
+                            track.offset.as_deref(),
+                            &time_map,
+                            0.0,
+                            &mut diagnostics,
+                            track.span,
+                            "offset",
+                        );
+                        let (file_start, file_end) = match track.clip.as_deref() {
+                            None => (0.0, None),
+                            Some(raw) => match parse_time_range(raw) {
+                                Some((start, end)) if start.value < end.value => (
+                                    time_map.point_to_seconds(start),
+                                    Some(time_map.point_to_seconds(end)),
+                                ),
+                                _ => {
+                                    diagnostics.push(Diagnostic::error(
+                                        format!(
+                                            "audio track `{}` clip must be an increasing range (e.g. 0s..30s)",
+                                            track.id
+                                        ),
+                                        track.span,
+                                    ));
+                                    (0.0, None)
+                                }
+                            },
+                        };
+                        let gain_linear = if let Some(db) = track.gain_db {
+                            10f64.powf(db / 20.0)
+                        } else if let Some(amp) = track.amplitude {
+                            if amp < 0.0 {
+                                diagnostics.push(Diagnostic::error(
+                                    format!(
+                                        "audio track `{}` amplitude must be non-negative",
+                                        track.id
+                                    ),
+                                    track.span,
+                                ));
+                                1.0
+                            } else {
+                                amp
+                            }
+                        } else {
+                            1.0
+                        };
+                        let fade_in = parse_optional_seconds(
+                            track.fade_in.as_deref(),
+                            &time_map,
+                            0.0,
+                            &mut diagnostics,
+                            track.span,
+                            "fade_in",
+                        );
+                        let fade_out = parse_optional_seconds(
+                            track.fade_out.as_deref(),
+                            &time_map,
+                            0.0,
+                            &mut diagnostics,
+                            track.span,
+                            "fade_out",
+                        );
+                        let tail_silence = parse_optional_seconds(
+                            track.tail_silence.as_deref(),
+                            &time_map,
+                            0.0,
+                            &mut diagnostics,
+                            track.span,
+                            "tail_silence",
+                        );
+                        audio_tracks.push(AudioTrack {
+                            id: track.id.clone(),
+                            role,
+                            uri,
+                            file_start,
+                            file_end,
+                            timeline_offset,
+                            gain_linear,
+                            fade_in,
+                            fade_out,
+                            tail_silence,
+                        });
+                    }
+                }
                 BlockKind::Orchestrate => {
                     let target = block.target.unwrap_or_else(|| "entire_song".to_owned());
                     if target != "entire_song" && !acts.iter().any(|act| act.name == target) {
@@ -495,17 +754,34 @@ pub fn compile(source: &str, settings: RenderSettings) -> Compilation {
             Span::new(0, 0, 1, 1),
         ));
     }
-    let end = acts.iter().map(|a| a.end_bar).max().unwrap_or(0);
-    let duration = (end as f64) * 4.0 * 60.0 / bpm;
+    let mut duration = acts
+        .iter()
+        .map(|a| a.end_seconds)
+        .chain(shots.iter().map(|s| s.end_seconds))
+        .fold(0.0_f64, f64::max);
+    for track in &audio_tracks {
+        if let Some(file_end) = track.file_end {
+            let playable = (file_end - track.file_start).max(0.0);
+            duration = duration.max(track.timeline_offset + playable + track.tail_silence);
+        }
+    }
+    let audio_source = if audio_tracks.is_empty() {
+        AudioSourceKind::PlaceholderTone
+    } else {
+        AudioSourceKind::Tracks
+    };
     let plan = (!diagnostics
         .iter()
         .any(|d| matches!(d.severity, muse_types::Severity::Error)))
     .then_some(RenderPlan {
         settings,
         duration_seconds: duration,
+        time_map,
         acts,
         shots,
         assets,
+        audio_source,
+        audio_tracks,
         visual_layers: visuals,
         visuals: visual_layers,
         transitions,
@@ -513,6 +789,51 @@ pub fn compile(source: &str, settings: RenderSettings) -> Compilation {
         orchestration,
     });
     Compilation { plan, diagnostics }
+}
+
+fn resolve_audio_uri(from: &str, assets: &[Asset]) -> Option<String> {
+    let from = from.trim();
+    if let Some(asset) = assets.iter().find(|asset| asset.name == from) {
+        return Some(asset.uri.clone());
+    }
+    if from.contains('/') || from.contains('\\') || from.contains('.') {
+        Some(from.to_owned())
+    } else {
+        None
+    }
+}
+
+fn parse_optional_seconds(
+    raw: Option<&str>,
+    time_map: &TimeMap,
+    default: f64,
+    diagnostics: &mut Vec<Diagnostic>,
+    span: Span,
+    field: &str,
+) -> f64 {
+    let Some(raw) = raw.map(str::trim).filter(|s| !s.is_empty()) else {
+        return default;
+    };
+    match parse_time_point(raw) {
+        Some(point) if point.value >= 0.0 => time_map.point_to_seconds(point),
+        _ => {
+            diagnostics.push(Diagnostic::error(
+                format!("invalid audio `{field}` time literal `{raw}`"),
+                span,
+            ));
+            default
+        }
+    }
+}
+
+fn bars_u32(bars: f64) -> u32 {
+    if !bars.is_finite() || bars <= 0.0 {
+        0
+    } else if bars >= f64::from(u32::MAX) {
+        u32::MAX
+    } else {
+        bars.round() as u32
+    }
 }
 
 fn parse_unit_strength(raw: &str) -> Result<f32, &'static str> {
@@ -534,20 +855,37 @@ impl RenderPlan {
             .unwrap_or(0)
     }
 
-    /// Active shot at normalized time `t` in `[0, 1]` across [`Self::end_bar`].
-    pub fn shot_at_normalized(&self, t: f32) -> Option<&Shot> {
+    /// Active shot at wall-clock seconds (half-open `[start, end)`).
+    pub fn shot_at_seconds(&self, t: f64) -> Option<&Shot> {
         if self.shots.is_empty() {
             return None;
         }
-        let end = self.end_bar();
-        if end == 0 {
-            return None;
-        }
-        let bar = ((t.clamp(0.0, 1.0) as f64) * f64::from(end)).floor() as u32;
-        let bar = bar.min(end.saturating_sub(1));
+        let t = t.max(0.0);
         self.shots
             .iter()
-            .find(|shot| shot.start_bar <= bar && bar < shot.end_bar)
+            .find(|shot| shot.start_seconds <= t && t < shot.end_seconds)
+            .or_else(|| {
+                // Exact end-of-plan: keep the last covering shot.
+                let duration = self.duration_seconds;
+                if duration > 0.0 && (t - duration).abs() < 1e-9 {
+                    self.shots
+                        .iter()
+                        .rev()
+                        .find(|shot| shot.end_seconds <= duration + 1e-9)
+                } else {
+                    None
+                }
+            })
+    }
+
+    /// Active shot at normalized time `t` in `[0, 1]` across [`Self::duration_seconds`].
+    pub fn shot_at_normalized(&self, t: f32) -> Option<&Shot> {
+        let duration = self.duration_seconds;
+        if duration <= 0.0 {
+            return None;
+        }
+        let t_sec = f64::from(t.clamp(0.0, 1.0)) * duration;
+        self.shot_at_seconds(t_sec)
     }
 
     /// Base visuals (no scene tag) plus overlays matching the active look scene
@@ -590,13 +928,12 @@ impl RenderPlan {
         let Some(shot) = self.shot_at_normalized(t) else {
             return t;
         };
-        let end = self.end_bar();
-        if end == 0 || shot.end_bar <= shot.start_bar {
+        let span = shot.end_seconds - shot.start_seconds;
+        if span <= 0.0 {
             return 0.0;
         }
-        let bar = f64::from(t) * f64::from(end);
-        let span = f64::from(shot.end_bar - shot.start_bar);
-        let linear = (((bar - f64::from(shot.start_bar)) / span) as f32).clamp(0.0, 1.0);
+        let t_sec = f64::from(t) * self.duration_seconds.max(0.0);
+        let linear = (((t_sec - shot.start_seconds) / span) as f32).clamp(0.0, 1.0);
         match shot.remap.as_ref().map(|r| r.mode) {
             None => linear,
             Some(ShotRemapMode::Freeze) => 1.0,
@@ -627,22 +964,21 @@ impl RenderPlan {
     /// Incoming transition state at `t`, if a blend window (xfade/flash/iris/slices) is active.
     pub fn transition_at_normalized(&self, t: f32) -> Option<TransitionState> {
         let shot = self.shot_at_normalized(t)?;
-        if matches!(shot.transition, ShotTransition::Cut) || shot.transition_bars <= 0.0 {
+        if matches!(shot.transition, ShotTransition::Cut) || shot.transition_seconds <= 0.0 {
             return None;
         }
-        let end = self.end_bar();
-        if end == 0 {
+        let duration = self.duration_seconds;
+        if duration <= 0.0 {
             return None;
         }
-        let bar = self.bar_at_normalized(t);
-        let start = shot.start_bar as f32;
-        let fade_end = start + shot.transition_bars;
-        if bar < start || bar >= fade_end {
+        let t_sec = f64::from(t.clamp(0.0, 1.0)) * duration;
+        let start = shot.start_seconds;
+        let fade_end = start + f64::from(shot.transition_seconds);
+        if t_sec < start || t_sec >= fade_end {
             return None;
         }
-        let mix = ((bar - start) / shot.transition_bars).clamp(0.0, 1.0);
-        let prev_bar = (start - 0.001).max(0.0);
-        let from_t = (prev_bar / end as f32).clamp(0.0, 1.0);
+        let mix = ((t_sec - start) / f64::from(shot.transition_seconds)).clamp(0.0, 1.0) as f32;
+        let prev_t = ((start - 1e-3) / duration).clamp(0.0, 1.0) as f32;
         let flash = if matches!(shot.transition, ShotTransition::Flash) {
             // Peak at the cut, fall off across the flash window.
             (1.0 - mix).powi(2)
@@ -652,7 +988,7 @@ impl RenderPlan {
         Some(TransitionState {
             kind: shot.transition,
             mix,
-            from_t,
+            from_t: prev_t,
             flash,
         })
     }
@@ -854,6 +1190,63 @@ mod tests {
         let edge = 4.1 / 16.0;
         let tr = plan.transition_at_normalized(edge as f32).expect("xfade");
         assert!(tr.mix > 0.0 && tr.mix < 1.0);
+    }
+
+    #[test]
+    fn bare_bars_duration_matches_classic_formula() {
+        let c = compile(
+            "timeline { act main : 0..226 } tempo { at 0 bpm 130.5 }",
+            RenderSettings::default(),
+        );
+        let plan = c.plan.expect("valid");
+        let expected = 226.0 * 4.0 * 60.0 / 130.5;
+        assert!(
+            (plan.duration_seconds - expected).abs() < 1e-6,
+            "got {} want {expected}",
+            plan.duration_seconds
+        );
+        assert_eq!(plan.time_map.beats_per_bar, 4);
+    }
+
+    #[test]
+    fn seconds_suffix_sets_wall_clock_duration() {
+        let c = compile(
+            "timeline { act main : 0s..30s shot c01 : 0s..8s scene paper } tempo { at 0 bpm 120 }",
+            RenderSettings::default(),
+        );
+        let plan = c.plan.expect("valid seconds timeline");
+        assert!((plan.duration_seconds - 30.0).abs() < 1e-9);
+        assert!((plan.shots[0].end_seconds - 8.0).abs() < 1e-9);
+        assert!(plan.shot_at_seconds(4.0).map(|s| s.id.as_str()) == Some("c01"));
+    }
+
+    #[test]
+    fn meter_affects_bar_duration() {
+        let c = compile(
+            r#"timeline { act main : 0..8 } tempo { bpm 120 } music for main { meter 3/4 motif "C4" }"#,
+            RenderSettings::default(),
+        );
+        let plan = c.plan.expect("valid 3/4");
+        assert_eq!(plan.time_map.beats_per_bar, 3);
+        // 8 bars × 3 beats × 0.5s = 12s
+        assert!((plan.duration_seconds - 12.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn explicit_bar_suffix_matches_bare() {
+        let bare = compile(
+            "timeline { act main : 0..8 } tempo { bpm 120 }",
+            RenderSettings::default(),
+        )
+        .plan
+        .expect("bare");
+        let explicit = compile(
+            "timeline { act main : 0bar..8bar } tempo { bpm 120 }",
+            RenderSettings::default(),
+        )
+        .plan
+        .expect("suffix");
+        assert!((bare.duration_seconds - explicit.duration_seconds).abs() < 1e-9);
     }
 
     #[test]

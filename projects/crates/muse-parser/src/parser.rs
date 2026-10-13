@@ -3,12 +3,12 @@ use muse_types::{Diagnostic, Span};
 
 use crate::{
     ast::{
-        ActDecl, Block, BlockContent, BlockKind, Declaration, EmotionDecl, MappingDecl, MeterDecl, MusicDecl,
-        ShotDecl,
-        OrchestrationDecl, Script, TempoDecl, VisualAssetKind, VisualDecl,
+        ActDecl, AudioTrackDecl, Block, BlockContent, BlockKind, Declaration, EmotionDecl, MappingDecl, MeterDecl,
+        MusicDecl, OrchestrationDecl, Script, ShotDecl, TempoDecl, VisualAssetKind, VisualDecl,
     },
     diagnostics::from_chumsky,
     lexer::{Token, TokenKind, lex, span},
+    time_parse::{parse_time_point, parse_time_range},
 };
 
 #[derive(Debug, Clone)]
@@ -37,6 +37,7 @@ pub fn parse(source: &str) -> ParseOutput {
             | TokenKind::Timeline
             | TokenKind::Tempo
             | TokenKind::Music
+            | TokenKind::Audio
             | TokenKind::Visual
             | TokenKind::Orchestrate
             | TokenKind::Directing => parse_block(source, &tokens, &mut index, &mut declarations, &mut diagnostics),
@@ -217,8 +218,10 @@ fn parse_block(
     let start = *index;
     let kind = block_kind(&tokens[*index].kind).expect("caller only dispatches block keywords");
     *index += 1;
-    let target = if matches!(kind, BlockKind::Music | BlockKind::Visual | BlockKind::Orchestrate)
-        && consume(tokens, index, TokenKind::For)
+    let target = if matches!(
+        kind,
+        BlockKind::Music | BlockKind::Audio | BlockKind::Visual | BlockKind::Orchestrate
+    ) && consume(tokens, index, TokenKind::For)
     {
         let target = identifier(tokens, *index);
         *index += usize::from(target.is_some());
@@ -368,10 +371,143 @@ fn typed_content(source: &str, kind: BlockKind, body: &str, body_span: Span) -> 
                 .lines()
                 .find_map(|line| line.split_once("density")?.1.split_whitespace().next()?.parse().ok()),
         }),
+        BlockKind::Audio => BlockContent::Audio {
+            tracks: parse_audio_tracks(body, body_span),
+        },
         _ => {
             let _ = source;
             BlockContent::Raw
         }
+    }
+}
+
+/// Parse nested `track id { … }` declarations inside an `audio` block body.
+fn parse_audio_tracks(body: &str, span: Span) -> Vec<AudioTrackDecl> {
+    let mut tracks = Vec::new();
+    let bytes = body.as_bytes();
+    let mut i = 0usize;
+    while i < bytes.len() {
+        while i < bytes.len() && bytes[i].is_ascii_whitespace() {
+            i += 1;
+        }
+        if i >= bytes.len() {
+            break;
+        }
+        if !body[i..].starts_with("track") {
+            // Skip one char / keep scanning for the next track keyword.
+            i += 1;
+            continue;
+        }
+        let after_track = i + "track".len();
+        if after_track < bytes.len() && (bytes[after_track].is_ascii_alphanumeric() || bytes[after_track] == b'_')
+        {
+            i += 1;
+            continue;
+        }
+        i = after_track;
+        while i < bytes.len() && bytes[i].is_ascii_whitespace() {
+            i += 1;
+        }
+        let id_start = i;
+        while i < bytes.len() && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_' || bytes[i] == b'-') {
+            i += 1;
+        }
+        if id_start == i {
+            continue;
+        }
+        let id = body[id_start..i].to_owned();
+        while i < bytes.len() && bytes[i].is_ascii_whitespace() {
+            i += 1;
+        }
+        if i >= bytes.len() || bytes[i] != b'{' {
+            continue;
+        }
+        i += 1;
+        let inner_start = i;
+        let mut depth = 1usize;
+        while i < bytes.len() {
+            match bytes[i] {
+                b'{' => depth += 1,
+                b'}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        break;
+                    }
+                }
+                _ => {}
+            }
+            i += 1;
+        }
+        if depth != 0 {
+            break;
+        }
+        let inner = &body[inner_start..i];
+        i += 1; // consume closing brace
+        tracks.push(parse_audio_track_fields(id, inner, span));
+    }
+    tracks
+}
+
+fn parse_audio_track_fields(id: String, inner: &str, span: Span) -> AudioTrackDecl {
+    let mut from = String::new();
+    let mut role = "song".to_owned();
+    let mut offset = None;
+    let mut clip = None;
+    let mut gain_db = None;
+    let mut amplitude = None;
+    let mut fade_in = None;
+    let mut fade_out = None;
+    let mut tail_silence = None;
+    for line in inner.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let mut words = line.split_whitespace();
+        let Some(key) = words.next() else {
+            continue;
+        };
+        match key {
+            "from" => {
+                if let Some(value) = words.next() {
+                    from = value.trim_matches('"').to_owned();
+                }
+            }
+            "role" => {
+                if let Some(value) = words.next() {
+                    role = value.to_owned();
+                }
+            }
+            "offset" => offset = words.next().map(str::to_owned),
+            "clip" => clip = words.next().map(str::to_owned),
+            "gain" => {
+                if let Some(value) = words.next() {
+                    gain_db = value.parse().ok();
+                }
+            }
+            "amplitude" => {
+                if let Some(value) = words.next() {
+                    amplitude = value.parse().ok();
+                }
+            }
+            "fade_in" => fade_in = words.next().map(str::to_owned),
+            "fade_out" => fade_out = words.next().map(str::to_owned),
+            "tail_silence" => tail_silence = words.next().map(str::to_owned),
+            _ => {}
+        }
+    }
+    AudioTrackDecl {
+        id,
+        from,
+        role,
+        offset,
+        clip,
+        gain_db,
+        amplitude,
+        fade_in,
+        fade_out,
+        tail_silence,
+        span,
     }
 }
 
@@ -536,19 +672,15 @@ fn parse_timeline_body(body: &str, span: Span) -> (Vec<ActDecl>, Vec<ShotDecl>) 
     let mut index = 0usize;
     while index < words.len() {
         if words[index] == "act" && index + 3 < words.len() && words[index + 2] == ":" {
-            if let Some((start_bar, end_bar)) = words[index + 3].split_once("..") {
-                if let (Ok(start_bar), Ok(end_bar)) =
-                    (start_bar.parse::<u32>(), end_bar.parse::<u32>())
-                {
-                    acts.push(ActDecl {
-                        name: words[index + 1].to_owned(),
-                        start_bar,
-                        end_bar,
-                        span,
-                    });
-                    index += 4;
-                    continue;
-                }
+            if let Some((start, end)) = parse_time_range(words[index + 3]) {
+                acts.push(ActDecl {
+                    name: words[index + 1].to_owned(),
+                    start,
+                    end,
+                    span,
+                });
+                index += 4;
+                continue;
             }
         }
         if words[index] == "shot" {
@@ -568,9 +700,7 @@ fn parse_shot_at(words: &[&str], span: Span) -> Option<(ShotDecl, usize)> {
     if words.len() < 6 || words[0] != "shot" || words[2] != ":" || words[4] != "scene" {
         return None;
     }
-    let (start_bar, end_bar) = words[3].split_once("..")?;
-    let start_bar = start_bar.parse().ok()?;
-    let end_bar = end_bar.parse().ok()?;
+    let (start, end) = parse_time_range(words[3])?;
     let scene = words[5].trim_matches('"').to_owned();
     if scene.is_empty() {
         return None;
@@ -583,7 +713,7 @@ fn parse_shot_at(words: &[&str], span: Span) -> Option<(ShotDecl, usize)> {
         None
     };
     let mut transition = "cut".to_owned();
-    let mut transition_bars = "0".to_owned();
+    let mut transition_len = "0".to_owned();
     if index < words.len() {
         match words[index] {
             "cut" => {
@@ -596,11 +726,11 @@ fn parse_shot_at(words: &[&str], span: Span) -> Option<(ShotDecl, usize)> {
                     "flash" => "0.25",
                     _ => "0.5",
                 };
-                if index < words.len() && words[index].parse::<f32>().is_ok() {
-                    transition_bars = words[index].to_owned();
+                if index < words.len() && parse_time_point(words[index]).is_some() {
+                    transition_len = words[index].to_owned();
                     index += 1;
                 } else {
-                    transition_bars = default_bars.into();
+                    transition_len = default_bars.into();
                 }
             }
             _ => {}
@@ -629,12 +759,12 @@ fn parse_shot_at(words: &[&str], span: Span) -> Option<(ShotDecl, usize)> {
     Some((
         ShotDecl {
             id: words[1].to_owned(),
-            start_bar,
-            end_bar,
+            start,
+            end,
             scene,
             target,
             transition,
-            transition_bars,
+            transition_len,
             remap_mode,
             remap_source,
             span,
@@ -683,6 +813,7 @@ fn block_kind(token: &TokenKind) -> Option<BlockKind> {
         TokenKind::Timeline => BlockKind::Timeline,
         TokenKind::Tempo => BlockKind::Tempo,
         TokenKind::Music => BlockKind::Music,
+        TokenKind::Audio => BlockKind::Audio,
         TokenKind::Visual => BlockKind::Visual,
         TokenKind::Orchestrate => BlockKind::Orchestrate,
         TokenKind::Directing => BlockKind::Directing,
@@ -743,6 +874,7 @@ fn recover_top_level(tokens: &[Token], index: &mut usize) {
                 | TokenKind::Timeline
                 | TokenKind::Tempo
                 | TokenKind::Music
+                | TokenKind::Audio
                 | TokenKind::Visual
                 | TokenKind::Orchestrate
                 | TokenKind::Directing
@@ -785,8 +917,21 @@ mod tests {
             panic!("expected typed timeline content")
         };
         assert_eq!(acts[0].name, "intro");
-        assert_eq!((acts[0].start_bar, acts[0].end_bar), (0, 8));
+        assert_eq!(acts[0].start.value, 0.0);
+        assert_eq!(acts[0].end.value, 8.0);
+        assert_eq!(acts[0].start.unit, crate::ast::TimeUnit::Bars);
         assert!(shots.is_empty());
+
+        let seconds = parse("timeline { act sting : 0s..12.5s }");
+        assert!(seconds.diagnostics.is_empty());
+        let Declaration::Block(timeline) = &seconds.script.declarations[0] else {
+            panic!("expected timeline")
+        };
+        let BlockContent::Timeline { acts, .. } = &timeline.content else {
+            panic!("typed timeline")
+        };
+        assert_eq!(acts[0].end.unit, crate::ast::TimeUnit::Seconds);
+        assert_eq!(acts[0].end.value, 12.5);
 
         let Declaration::Block(tempo) = &result.script.declarations[1] else {
             panic!("expected tempo block")
@@ -811,7 +956,8 @@ mod tests {
         };
         assert_eq!(shots.len(), 2);
         assert_eq!(shots[0].id, "s01");
-        assert_eq!((shots[0].start_bar, shots[0].end_bar), (0, 4));
+        assert_eq!(shots[0].start.value, 0.0);
+        assert_eq!(shots[0].end.value, 4.0);
         assert_eq!(shots[0].scene, "ember");
         assert_eq!(shots[0].target, None);
         assert_eq!(shots[1].id, "s02");

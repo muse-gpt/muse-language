@@ -24,6 +24,8 @@ pub enum TokenKind {
     Tempo,
     #[token("music")]
     Music,
+    #[token("audio")]
+    Audio,
     #[token("visual")]
     Visual,
     #[token("orchestrate")]
@@ -81,6 +83,7 @@ impl fmt::Display for TokenKind {
             Self::Timeline => "timeline",
             Self::Tempo => "tempo",
             Self::Music => "music",
+            Self::Audio => "audio",
             Self::Visual => "visual",
             Self::Orchestrate => "orchestrate",
             Self::Directing => "directing",

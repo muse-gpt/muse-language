@@ -4,10 +4,12 @@ mod ast;
 pub mod diagnostics;
 pub mod lexer;
 mod parser;
+mod time_parse;
 
 pub use ast::{
-    ActDecl, Block, BlockContent, BlockKind, Declaration, EmotionDecl, MappingDecl, MeterDecl, MusicDecl,
-    OrchestrationDecl, Script, ShotDecl, TempoDecl, VisualAssetKind, VisualDecl,
+    ActDecl, AudioTrackDecl, Block, BlockContent, BlockKind, Declaration, EmotionDecl, MappingDecl, MeterDecl,
+    MusicDecl, OrchestrationDecl, Script, ShotDecl, TempoDecl, TimePoint, TimeUnit, VisualAssetKind, VisualDecl,
 };
 pub use lexer::{Token, TokenKind, lex};
 pub use parser::{ParseOutput, parse};
+pub use time_parse::{parse_time_point, parse_time_range};

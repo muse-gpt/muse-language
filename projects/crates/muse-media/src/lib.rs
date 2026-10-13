@@ -21,4 +21,6 @@ pub use gpu::{
     preferred_compositor, probe_gpu,
 };
 pub use preview::{PreviewManifest, PreviewOptions, render_preview, render_preview_with};
-pub use wav::write_wav;
+pub use wav::{
+    MixedAudioSource, mix_plan_audio, write_placeholder_tone_wav, write_wav,
+};
