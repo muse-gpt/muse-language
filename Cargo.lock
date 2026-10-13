@@ -1087,10 +1087,12 @@ dependencies = [
 name = "muse-ir"
 version = "0.0.1"
 dependencies = [
+ "anyhow",
  "muse-parser",
  "muse-types",
  "schemars",
  "serde",
+ "serde_json",
 ]
 
 [[package]]
