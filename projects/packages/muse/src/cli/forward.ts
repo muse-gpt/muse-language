@@ -319,6 +319,8 @@ function runPreview(args: {
     assetRoot: string;
     outDir: string;
     locale?: string | null;
+    /** Cap wall-clock frame count (default 240). */
+    maxFrames?: number;
 }): number {
     const { native, scriptPath, source, settings, assetRoot, outDir, locale } = args;
     const compiled = native.compileSource(source, settings, assetRoot, locale ?? null);
@@ -333,7 +335,7 @@ function runPreview(args: {
     const fps = Math.max(1, plan.settings?.frame_rate ?? 24);
     const duration = Math.max(0, plan.duration_seconds ?? 0);
     const fullFrames = Math.max(1, Math.ceil(duration * fps));
-    const maxFrames = 240;
+    const maxFrames = Math.max(1, Math.floor(args.maxFrames ?? 240));
     const frames = Math.min(fullFrames, maxFrames);
     mkdirSync(outDir, { recursive: true });
     for (let index = 0; index < frames; index++) {
@@ -393,6 +395,7 @@ export function forwardPreview(options: ParsedOptions): number {
                     `preview job \`${job.id}\` → entry \`${entry.id}\`${locale ? ` locale ${locale}` : ""}`,
                 );
             }
+            const maxFrames = readNumber(options, "maxFrames") ?? readNumber(options, "max-frames");
             return runPreview({
                 native,
                 scriptPath,
@@ -401,18 +404,21 @@ export function forwardPreview(options: ParsedOptions): number {
                 assetRoot: projectRoot,
                 outDir,
                 locale,
+                maxFrames,
             });
         }
 
         const script = requirePositional(options, "script");
         if (!script) return 2;
         const scriptPath = resolve(script);
+        const maxFrames = readNumber(options, "maxFrames") ?? readNumber(options, "max-frames");
         return runPreview({
             native,
             scriptPath,
             source: readFileSync(scriptPath, "utf8"),
             assetRoot: inferAssetRoot(scriptPath),
             outDir: join(dirname(scriptPath), "preview"),
+            maxFrames,
         });
     } catch (err) {
         console.error(`muse: ${err instanceof Error ? err.message : err}`);

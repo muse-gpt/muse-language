@@ -7,5 +7,6 @@ export function registerPreviewCommand(cli: Cli): void {
         .option("--project <dir>", "cli.opt.project")
         .option("--entry <id>", "cli.opt.entry")
         .option("--job <id>", "cli.opt.job")
+        .option("--max-frames <n>", "cli.opt.max-frames")
         .action((options: ParsedOptions) => forwardPreview(options));
 }

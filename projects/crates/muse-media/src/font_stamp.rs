@@ -109,6 +109,7 @@ pub fn draw_stamp_label(
 ///
 /// When `display_text` is set (localized line/phrase), paint that single run instead of
 /// vocal word slices — timing still comes from the vocal line window.
+#[allow(dead_code)] // public helper; compose uses the opacity-aware variant
 pub fn draw_lyric_caption(
     canvas: &mut RgbImage,
     layer: &LyricLayer,
