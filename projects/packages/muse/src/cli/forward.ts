@@ -31,13 +31,6 @@ function printDiagnostics(diagnostics: Diagnostic[]): void {
     }
 }
 
-function unavailable(feature: string): number {
-    console.error(
-        `muse: \`${feature}\` is not wired to muse-napi primitives yet (compose in TS when the primitive exists).`,
-    );
-    return 1;
-}
-
 function ensureParent(path: string): void {
     const parent = dirname(path);
     if (parent && parent !== ".") mkdirSync(parent, { recursive: true });
@@ -371,7 +364,13 @@ export function forwardSkillValidate(): number {
 }
 
 export function forwardMcpServe(): number {
-    return unavailable("mcp serve");
+    try {
+        loadNative().serveMcpStdio(resolve("."));
+        return 0;
+    } catch (err) {
+        console.error(`muse: ${err instanceof Error ? err.message : err}`);
+        return 1;
+    }
 }
 
 export { readFlag, readString };

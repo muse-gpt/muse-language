@@ -304,3 +304,15 @@ pub fn read_media_info(path: String) -> Result<Value> {
 pub fn list_project_skills(project_path: String) -> Result<Value> {
     json_value(&list_skills(PathBuf::from(project_path).as_path()).map_err(to_napi_err)?)
 }
+
+/// Block on Muse MCP over stdio until the client disconnects (host transport primitive).
+#[napi]
+pub fn serve_mcp_stdio(project_path: String) -> Result<()> {
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .map_err(to_napi_err)?;
+    runtime
+        .block_on(muse_mcp::serve(PathBuf::from(project_path)))
+        .map_err(to_napi_err)
+}

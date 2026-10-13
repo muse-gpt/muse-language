@@ -1147,6 +1147,7 @@ dependencies = [
  "anyhow",
  "image",
  "muse-ir",
+ "muse-mcp",
  "muse-media",
  "muse-music",
  "muse-parser",
@@ -1158,6 +1159,7 @@ dependencies = [
  "napi-derive",
  "serde",
  "serde_json",
+ "tokio",
 ]
 
 [[package]]

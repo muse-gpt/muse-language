@@ -87,6 +87,8 @@ export type MuseNative = {
     importProjectAsset(projectPath: string, inputPath: string): unknown;
     readMediaInfo(path: string): unknown;
     listProjectSkills(projectPath: string): unknown;
+    /** Blocks until the MCP client disconnects. */
+    serveMcpStdio(projectPath: string): void;
 };
 
 function platformShort(): string {
