@@ -34,6 +34,8 @@ pub enum TokenKind {
     Orchestrate,
     #[token("directing")]
     Directing,
+    #[token("instance")]
+    Instance,
     #[token("for")]
     For,
     #[token("{")]
@@ -90,6 +92,7 @@ impl fmt::Display for TokenKind {
             Self::Visual => "visual",
             Self::Orchestrate => "orchestrate",
             Self::Directing => "directing",
+            Self::Instance => "instance",
             Self::For => "for",
             Self::LBrace => "{",
             Self::RBrace => "}",

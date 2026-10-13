@@ -224,6 +224,7 @@ mod tests {
             transitions: 0,
             intents: vec![],
             orchestration: vec![],
+            prefab_instances: vec![],
         };
         let out = dir.join("out.wav");
         let kind = mix_plan_audio(&plan, &out, 0.25, &dir).unwrap();

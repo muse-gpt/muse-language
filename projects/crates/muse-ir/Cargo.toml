@@ -6,6 +6,7 @@ license.workspace = true
 [dependencies]
 anyhow.workspace = true
 muse-parser = { path = "../muse-parser" }
+muse-project = { path = "../muse-project" }
 muse-types = { path = "../muse-types" }
 serde.workspace = true
 serde_json.workspace = true

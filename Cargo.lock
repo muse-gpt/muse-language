@@ -1110,6 +1110,7 @@ version = "0.0.1"
 dependencies = [
  "anyhow",
  "muse-parser",
+ "muse-project",
  "muse-types",
  "schemars",
  "serde",

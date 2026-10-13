@@ -3,9 +3,10 @@ use muse_types::{Diagnostic, Span};
 
 use crate::{
     ast::{
-        ActDecl, AudioTrackDecl, Block, BlockContent, BlockKind, Declaration, EmotionDecl, LyricDecl,
-        LyricLayerDecl, LyricLineDecl, LyricWordDecl, MappingDecl, MeterDecl,
-        MusicDecl, OrchestrationDecl, Script, ShotDecl, TempoDecl, VisualAssetKind, VisualDecl,
+        ActDecl, AudioTrackDecl, Block, BlockContent, BlockKind, Declaration, EmotionDecl,
+        InstancePortArg, LyricDecl, LyricLayerDecl, LyricLineDecl, LyricWordDecl, MappingDecl,
+        MeterDecl, MusicDecl, OrchestrationDecl, Script, ShotDecl, TempoDecl, VisualAssetKind,
+        VisualDecl,
     },
     diagnostics::from_chumsky,
     lexer::{Token, TokenKind, lex, span},
@@ -34,6 +35,9 @@ pub fn parse(source: &str) -> ParseOutput {
             TokenKind::Using => parse_using(source, &tokens, &mut index, &mut declarations, &mut diagnostics),
             TokenKind::Asset => parse_asset(source, &tokens, &mut index, &mut declarations, &mut diagnostics),
             TokenKind::Use => parse_skill(source, &tokens, &mut index, &mut declarations, &mut diagnostics),
+            TokenKind::Instance => {
+                parse_instance(source, &tokens, &mut index, &mut declarations, &mut diagnostics)
+            }
             TokenKind::Intent
             | TokenKind::Timeline
             | TokenKind::Tempo
@@ -208,6 +212,152 @@ fn parse_skill(
         name: name.unwrap_or_default(),
         span: joined_span(source, &tokens[start], &tokens[*index - 1]),
     });
+}
+
+/// `instance id = PrefabName { port = value, … }` (doc 20 §3.2). Optional trailing `;`.
+fn parse_instance(
+    source: &str,
+    tokens: &[Token],
+    index: &mut usize,
+    declarations: &mut Vec<Declaration>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    let start = *index;
+    *index += 1;
+    let Some(id) = identifier(tokens, *index) else {
+        missing(
+            source,
+            tokens,
+            start,
+            "instance requires an id before `=`",
+            diagnostics,
+        );
+        recover_top_level(tokens, index);
+        return;
+    };
+    *index += 1;
+    if !consume(tokens, index, TokenKind::Equals) {
+        missing(
+            source,
+            tokens,
+            start,
+            "instance requires `id = Prefab { … }`",
+            diagnostics,
+        );
+        recover_top_level(tokens, index);
+        return;
+    }
+    let Some(prefab) = identifier(tokens, *index) else {
+        missing(
+            source,
+            tokens,
+            start,
+            "instance requires a prefab name after `=`",
+            diagnostics,
+        );
+        recover_top_level(tokens, index);
+        return;
+    };
+    *index += 1;
+    if !consume(tokens, index, TokenKind::LBrace) {
+        missing(
+            source,
+            tokens,
+            start,
+            "instance requires `{ … }` port block",
+            diagnostics,
+        );
+        recover_top_level(tokens, index);
+        return;
+    }
+    let mut ports = Vec::new();
+    while *index < tokens.len() && tokens[*index].kind != TokenKind::RBrace {
+        let port_start = *index;
+        let Some(port_id) = identifier(tokens, *index) else {
+            missing(
+                source,
+                tokens,
+                port_start,
+                "instance port requires an identifier",
+                diagnostics,
+            );
+            recover_braced(tokens, index);
+            break;
+        };
+        *index += 1;
+        if !consume(tokens, index, TokenKind::Equals) {
+            missing(
+                source,
+                tokens,
+                port_start,
+                "instance port requires `name = value`",
+                diagnostics,
+            );
+            recover_braced(tokens, index);
+            break;
+        }
+        let Some(value) = port_value(tokens, *index) else {
+            missing(
+                source,
+                tokens,
+                port_start,
+                "instance port value must be a string, number, or identifier",
+                diagnostics,
+            );
+            recover_braced(tokens, index);
+            break;
+        };
+        let value_token = &tokens[*index];
+        *index += 1;
+        ports.push(InstancePortArg {
+            id: port_id,
+            value,
+            span: joined_span(source, &tokens[port_start], value_token),
+        });
+        let _ = consume(tokens, index, TokenKind::Comma);
+    }
+    if !consume(tokens, index, TokenKind::RBrace) {
+        missing(
+            source,
+            tokens,
+            start,
+            "instance port block requires closing `}`",
+            diagnostics,
+        );
+        recover_top_level(tokens, index);
+        return;
+    }
+    let _ = consume(tokens, index, TokenKind::Semicolon);
+    declarations.push(Declaration::Instance {
+        id,
+        prefab,
+        ports,
+        span: joined_span(source, &tokens[start], &tokens[*index - 1]),
+    });
+}
+
+fn port_value(tokens: &[Token], index: usize) -> Option<String> {
+    let token = tokens.get(index)?;
+    match token.kind {
+        TokenKind::String => Some(unquote(&token.lexeme)),
+        TokenKind::Number | TokenKind::Identifier => Some(token.lexeme.clone()),
+        _ => None,
+    }
+}
+
+fn recover_braced(tokens: &[Token], index: &mut usize) {
+    let mut depth = 1usize;
+    while *index < tokens.len() && depth > 0 {
+        match tokens[*index].kind {
+            TokenKind::LBrace => depth += 1,
+            TokenKind::RBrace => depth -= 1,
+            _ => {}
+        }
+        *index += 1;
+        if depth == 0 {
+            break;
+        }
+    }
 }
 
 fn parse_block(
@@ -1158,6 +1308,7 @@ fn recover_top_level(tokens: &[Token], index: &mut usize) {
                 | TokenKind::Using
                 | TokenKind::Asset
                 | TokenKind::Use
+                | TokenKind::Instance
                 | TokenKind::Intent
                 | TokenKind::Timeline
                 | TokenKind::Tempo
@@ -1376,6 +1527,32 @@ mod tests {
         assert_eq!(declaration.motif, ["C4", "E4"]);
         assert_eq!(declaration.density, Some(0.8));
         assert_eq!(declaration.meter.as_ref().map(|m| (m.beats, m.beat_unit)), Some((4, 4)));
+    }
+
+    #[test]
+    fn parses_prefab_instance_declaration() {
+        let result = parse(
+            r#"timeline { act intro : 0..8 }
+instance caption = LyricCard { cue = "C09", intensity = 1.0 }
+"#,
+        );
+        assert!(result.diagnostics.is_empty(), "{:?}", result.diagnostics);
+        let Declaration::Instance {
+            id,
+            prefab,
+            ports,
+            ..
+        } = &result.script.declarations[1]
+        else {
+            panic!("expected instance declaration");
+        };
+        assert_eq!(id, "caption");
+        assert_eq!(prefab, "LyricCard");
+        assert_eq!(ports.len(), 2);
+        assert_eq!(ports[0].id, "cue");
+        assert_eq!(ports[0].value, "C09");
+        assert_eq!(ports[1].id, "intensity");
+        assert_eq!(ports[1].value, "1.0");
     }
 
     #[test]

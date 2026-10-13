@@ -26,7 +26,23 @@ pub enum Declaration {
         name: String,
         span: Span,
     },
+    /// Scene/timeline prefab reference: `instance id = Prefab { port = value, … }`.
+    Instance {
+        id: String,
+        prefab: String,
+        ports: Vec<InstancePortArg>,
+        span: Span,
+    },
     Block(Block),
+}
+
+/// Port assignment on a prefab instance (`cue = "C09"`).
+#[derive(Debug, Clone, Serialize)]
+pub struct InstancePortArg {
+    pub id: String,
+    /// Literal text (string unquoted, number, or identifier).
+    pub value: String,
+    pub span: Span,
 }
 
 #[derive(Debug, Clone, Serialize)]

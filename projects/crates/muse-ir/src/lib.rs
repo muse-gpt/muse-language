@@ -5,7 +5,10 @@ use muse_parser::{
 };
 use muse_types::{Diagnostic, RenderSettings, Span};
 use serde::{Deserialize, Serialize};
-use std::{collections::BTreeSet, path::{Path, PathBuf}};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    path::{Path, PathBuf},
+};
 
 mod lyric_locale;
 mod lyric_timing;
@@ -300,6 +303,15 @@ impl LyricTrack {
     }
 }
 
+/// Scene-level prefab instance (doc 20). Ports checked against prefab VON when `asset_root` is set.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PrefabInstance {
+    pub id: String,
+    pub prefab: String,
+    /// Port id → literal value (string form).
+    pub ports: BTreeMap<String, String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RenderPlan {
     pub settings: RenderSettings,
@@ -318,6 +330,8 @@ pub struct RenderPlan {
     pub transitions: usize,
     pub intents: Vec<String>,
     pub orchestration: Vec<OrchestrationRule>,
+    #[serde(default)]
+    pub prefab_instances: Vec<PrefabInstance>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Compilation {
@@ -357,6 +371,9 @@ pub fn compile_with(source: &str, settings: RenderSettings, options: CompileOpti
     let mut lyric_layers = Vec::new();
     let mut lyric_ids = BTreeSet::new();
     let mut lyric_layer_ids = BTreeSet::new();
+    let mut prefab_instances = Vec::new();
+    let mut instance_ids = BTreeSet::new();
+    let mut prefab_defs: Option<BTreeMap<String, muse_project::PrefabDefinition>> = None;
 
     // Pre-scan tempo/meter so timeline conversion sees the full-file clock (ADR 0006 / doc 13).
     let mut bpm = 120.0;
@@ -401,6 +418,99 @@ pub fn compile_with(source: &str, settings: RenderSettings, options: CompileOpti
                     diagnostics.push(Diagnostic::error(format!("duplicate asset `{name}`"), span));
                 }
                 assets.push(Asset { name, uri });
+            }
+            Declaration::Instance {
+                id,
+                prefab,
+                ports,
+                span,
+            } => {
+                if id.trim().is_empty() {
+                    diagnostics.push(Diagnostic::error(
+                        "instance id must not be empty",
+                        span,
+                    ));
+                    continue;
+                }
+                if prefab.trim().is_empty() {
+                    diagnostics.push(Diagnostic::error(
+                        format!("instance `{id}` missing prefab name"),
+                        span,
+                    ));
+                    continue;
+                }
+                if !instance_ids.insert(id.clone()) {
+                    diagnostics.push(Diagnostic::error(
+                        format!("duplicate instance id `{id}`"),
+                        span,
+                    ));
+                    continue;
+                }
+                let mut port_map = BTreeMap::new();
+                for port in &ports {
+                    if port.id.trim().is_empty() {
+                        diagnostics.push(Diagnostic::error(
+                            format!("instance `{id}` has a port with empty id"),
+                            port.span,
+                        ));
+                        continue;
+                    }
+                    if port_map
+                        .insert(port.id.clone(), port.value.clone())
+                        .is_some()
+                    {
+                        diagnostics.push(Diagnostic::error(
+                            format!("instance `{id}` duplicate port `{0}`", port.id),
+                            port.span,
+                        ));
+                    }
+                }
+                if let Some(root) = options.asset_root.as_deref() {
+                    if prefab_defs.is_none() {
+                        prefab_defs = Some(match muse_project::check_project_prefabs(root) {
+                            Ok(defs) => defs
+                                .into_iter()
+                                .map(|def| (def.id.clone(), def))
+                                .collect(),
+                            Err(err) => {
+                                diagnostics.push(Diagnostic::error(
+                                    format!("failed to load project prefabs: {err}"),
+                                    span,
+                                ));
+                                BTreeMap::new()
+                            }
+                        });
+                    }
+                    if let Some(defs) = prefab_defs.as_ref() {
+                        match defs.get(&prefab) {
+                            None => diagnostics.push(Diagnostic::error(
+                                format!(
+                                    "instance `{id}` references unknown prefab `{prefab}`"
+                                ),
+                                span,
+                            )),
+                            Some(def) => {
+                                let known: BTreeSet<&str> =
+                                    def.ports.iter().map(|p| p.id.as_str()).collect();
+                                for (port_id, _) in &port_map {
+                                    if !known.contains(port_id.as_str()) {
+                                        diagnostics.push(Diagnostic::error(
+                                            format!(
+                                                "instance `{id}` unknown port `{port_id}` on prefab `{prefab}`"
+                                            ),
+                                            span,
+                                        ));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                prefab_instances.push(PrefabInstance {
+                    id,
+                    prefab,
+                    ports: port_map,
+                });
             }
             Declaration::Block(block) => match block.kind {
                 BlockKind::Intent => {
@@ -1108,6 +1218,7 @@ pub fn compile_with(source: &str, settings: RenderSettings, options: CompileOpti
         transitions,
         intents,
         orchestration,
+        prefab_instances,
     });
     Compilation { plan, diagnostics }
 }
@@ -1968,5 +2079,90 @@ lyric for main {
                 .collect::<Vec<_>>(),
             ["ember"]
         );
+    }
+
+    #[test]
+    fn compiles_prefab_instance_against_project_von() {
+        use std::{
+            env, fs,
+            time::{SystemTime, UNIX_EPOCH},
+        };
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = env::temp_dir().join(format!("muse-prefab-instance-{stamp}"));
+        fs::create_dir_all(root.join("assets/prefabs")).unwrap();
+        fs::write(
+            root.join("assets/prefabs/LyricCard.von"),
+            r#"{
+  id: "LyricCard"
+  kind: "prefab"
+  ports: [
+    { id: "cue", type: "CueId" }
+    { id: "intensity", type: "f32", default: "1.0" }
+  ]
+  objects: [ { id: "root", components: [ { id: "layout", type: "LayoutBox" } ] } ]
+}
+"#,
+        )
+        .unwrap();
+        let source = r#"timeline { act main : 0s..2s }
+instance caption = LyricCard { cue = "C09", intensity = 1.0 }
+"#;
+        let ok = compile_with(
+            source,
+            RenderSettings::default(),
+            CompileOptions {
+                asset_root: Some(root.clone()),
+            },
+        );
+        assert!(ok.is_success(), "{:?}", ok.diagnostics);
+        let plan = ok.plan.expect("instance plan");
+        assert_eq!(plan.prefab_instances.len(), 1);
+        assert_eq!(plan.prefab_instances[0].id, "caption");
+        assert_eq!(plan.prefab_instances[0].prefab, "LyricCard");
+        assert_eq!(
+            plan.prefab_instances[0].ports.get("cue").map(String::as_str),
+            Some("C09")
+        );
+
+        let bad = compile_with(
+            r#"timeline { act main : 0s..2s }
+instance caption = MissingCard { cue = "C09" }
+"#,
+            RenderSettings::default(),
+            CompileOptions {
+                asset_root: Some(root.clone()),
+            },
+        );
+        assert!(!bad.is_success());
+        assert!(
+            bad.diagnostics
+                .iter()
+                .any(|d| d.message.contains("unknown prefab")),
+            "{:?}",
+            bad.diagnostics
+        );
+
+        let bad_port = compile_with(
+            r#"timeline { act main : 0s..2s }
+instance caption = LyricCard { nope = "x" }
+"#,
+            RenderSettings::default(),
+            CompileOptions {
+                asset_root: Some(root.clone()),
+            },
+        );
+        assert!(!bad_port.is_success());
+        assert!(
+            bad_port
+                .diagnostics
+                .iter()
+                .any(|d| d.message.contains("unknown port")),
+            "{:?}",
+            bad_port.diagnostics
+        );
+        let _ = fs::remove_dir_all(root);
     }
 }
