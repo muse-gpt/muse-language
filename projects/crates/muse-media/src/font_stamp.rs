@@ -115,18 +115,25 @@ pub fn draw_lyric_caption(
     line: &LyricLine,
     active: Option<&LyricWord>,
 ) {
-    draw_lyric_caption_with_display(canvas, layer, line, active, None);
+    draw_lyric_caption_with_display(canvas, layer, line, active, None, 0.95);
 }
 
-/// Same as [`draw_lyric_caption`], with optional localized display override.
+/// Same as [`draw_lyric_caption`], with optional localized display override and opacity.
+///
+/// `opacity` is clamped to `[0, 1]` (LyricCard `intensity` / focus dimming).
 pub fn draw_lyric_caption_with_display(
     canvas: &mut RgbImage,
     layer: &LyricLayer,
     line: &LyricLine,
     active: Option<&LyricWord>,
     display_text: Option<&str>,
+    opacity: f32,
 ) {
     if line.words.is_empty() && display_text.is_none_or(|s| s.trim().is_empty()) {
+        return;
+    }
+    let opacity = opacity.clamp(0.0, 1.0);
+    if opacity <= 0.001 {
         return;
     }
     let Some(font) = system_font() else {
@@ -189,7 +196,7 @@ pub fn draw_lyric_caption_with_display(
 
     let mut x = origin_x;
     for (text, color, width) in runs {
-        draw_text_run(canvas, font, &text, scale, x, baseline, color, 0.95);
+        draw_text_run(canvas, font, &text, scale, x, baseline, color, opacity);
         x += width + gap;
         if x > canvas.width() as f32 - margin {
             break;

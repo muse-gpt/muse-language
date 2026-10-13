@@ -348,6 +348,40 @@ pub fn plan_lut(plan: &RenderPlan) -> Option<(String, f32)> {
     layers_lut(&plan.visuals.iter().collect::<Vec<_>>())
 }
 
+/// First `LyricCard` prefab instance ports (doc 20): `cue` + `intensity`.
+fn lyric_card_ports(plan: &RenderPlan) -> Option<(Option<&str>, f32)> {
+    let instance = plan
+        .prefab_instances
+        .iter()
+        .find(|inst| inst.prefab == "LyricCard")?;
+    let cue = instance
+        .ports
+        .get("cue")
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty());
+    let intensity = instance
+        .ports
+        .get("intensity")
+        .and_then(|s| s.parse::<f32>().ok())
+        .unwrap_or(1.0)
+        .clamp(0.0, 2.0);
+    Some((cue, intensity))
+}
+
+/// Caption opacity from LyricCard: `intensity` × optional non-focus dim (0.35).
+fn lyric_card_opacity(plan: &RenderPlan, line_cue: Option<&str>) -> f32 {
+    let Some((focus_cue, intensity)) = lyric_card_ports(plan) else {
+        return 0.95;
+    };
+    let mut opacity = 0.95 * intensity;
+    if let Some(focus) = focus_cue {
+        if line_cue != Some(focus) {
+            opacity *= 0.35;
+        }
+    }
+    opacity.clamp(0.0, 1.0)
+}
+
 fn paint_lyric_layers(canvas: &mut RgbImage, plan: &RenderPlan, t_norm: f32) {
     if plan.lyric_layers.is_empty() || plan.lyric_tracks.is_empty() {
         return;
@@ -365,15 +399,18 @@ fn paint_lyric_layers(canvas: &mut RgbImage, plan: &RenderPlan, t_norm: f32) {
             continue;
         };
         let active = track.active_word_at(t_sec);
+        let opacity = lyric_card_opacity(plan, line.cue_id.as_deref());
         if track.uses_localized_display(line) {
             let display = track
                 .localized_text_for_line(line)
                 .map(|t| t.text.as_str());
             crate::font_stamp::draw_lyric_caption_with_display(
-                canvas, layer, line, active, display,
+                canvas, layer, line, active, display, opacity,
             );
         } else {
-            crate::font_stamp::draw_lyric_caption(canvas, layer, line, active);
+            crate::font_stamp::draw_lyric_caption_with_display(
+                canvas, layer, line, active, None, opacity,
+            );
         }
     }
 }
@@ -608,4 +645,61 @@ fn blit_cover(dst: &mut RgbImage, src: &RgbImage) {
 
 pub fn plan_has_images(plan: &RenderPlan) -> bool {
     plan.visuals.iter().any(|layer| !layer.images.is_empty())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{lyric_card_opacity, lyric_card_ports};
+    use muse_ir::{
+        AudioSourceKind, PrefabInstance, RenderPlan, TimeMap,
+    };
+    use muse_types::RenderSettings;
+    use std::collections::BTreeMap;
+
+    fn empty_plan(instances: Vec<PrefabInstance>) -> RenderPlan {
+        RenderPlan {
+            settings: RenderSettings::default(),
+            duration_seconds: 1.0,
+            time_map: TimeMap::new(120.0, 4),
+            acts: vec![],
+            shots: vec![],
+            assets: vec![],
+            audio_source: AudioSourceKind::PlaceholderTone,
+            audio_tracks: vec![],
+            lyric_tracks: vec![],
+            lyric_layers: vec![],
+            visual_layers: 0,
+            visuals: vec![],
+            transitions: 0,
+            intents: vec![],
+            orchestration: vec![],
+            prefab_instances: instances,
+        }
+    }
+
+    #[test]
+    fn lyric_card_intensity_and_cue_focus_dim() {
+        assert!((lyric_card_opacity(&empty_plan(vec![]), Some("C09")) - 0.95).abs() < 1e-6);
+
+        let mut ports = BTreeMap::new();
+        ports.insert("cue".into(), "C09".into());
+        ports.insert("intensity".into(), "1.0".into());
+        let plan = empty_plan(vec![PrefabInstance {
+            id: "caption".into(),
+            prefab: "LyricCard".into(),
+            ports,
+        }]);
+        assert_eq!(lyric_card_ports(&plan).unwrap().0, Some("C09"));
+        assert!((lyric_card_opacity(&plan, Some("C09")) - 0.95).abs() < 1e-6);
+        assert!((lyric_card_opacity(&plan, Some("C01")) - 0.95 * 0.35).abs() < 1e-6);
+
+        let mut dim = BTreeMap::new();
+        dim.insert("intensity".into(), "0.5".into());
+        let dim_plan = empty_plan(vec![PrefabInstance {
+            id: "caption".into(),
+            prefab: "LyricCard".into(),
+            ports: dim,
+        }]);
+        assert!((lyric_card_opacity(&dim_plan, None) - 0.95 * 0.5).abs() < 1e-6);
+    }
 }

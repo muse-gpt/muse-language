@@ -1142,6 +1142,7 @@ dependencies = [
  "hound",
  "image",
  "muse-ir",
+ "muse-types",
  "pollster",
  "serde",
  "serde_json",
