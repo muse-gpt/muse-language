@@ -4,7 +4,7 @@ use muse_types::{Diagnostic, Span};
 use crate::{
     ast::{
         ActDecl, AudioTrackDecl, Block, BlockContent, BlockKind, Declaration, EmotionDecl, LyricDecl,
-        LyricLineDecl, LyricWordDecl, MappingDecl, MeterDecl,
+        LyricLayerDecl, LyricLineDecl, LyricWordDecl, MappingDecl, MeterDecl,
         MusicDecl, OrchestrationDecl, Script, ShotDecl, TempoDecl, VisualAssetKind, VisualDecl,
     },
     diagnostics::from_chumsky,
@@ -407,7 +407,130 @@ fn parse_lyric_decl(body: &str, span: Span) -> LyricDecl {
         }
     }
     decl.lines = parse_lyric_lines(body, span);
+    decl.layers = parse_lyric_layers(body, span);
     decl
+}
+
+fn advance_utf8(body: &str, i: usize) -> usize {
+    body[i..]
+        .chars()
+        .next()
+        .map(|ch| i + ch.len_utf8())
+        .unwrap_or_else(|| body.len())
+}
+
+fn parse_lyric_layers(body: &str, span: Span) -> Vec<LyricLayerDecl> {
+    let mut layers = Vec::new();
+    let bytes = body.as_bytes();
+    let mut i = 0usize;
+    while i < bytes.len() {
+        while i < bytes.len() && bytes[i].is_ascii_whitespace() {
+            i += 1;
+        }
+        if i >= bytes.len() {
+            break;
+        }
+        if !body[i..].starts_with("layer") {
+            i = advance_utf8(body, i);
+            continue;
+        }
+        let after = i + "layer".len();
+        if after < bytes.len() && (bytes[after].is_ascii_alphanumeric() || bytes[after] == b'_') {
+            i = advance_utf8(body, i);
+            continue;
+        }
+        i = after;
+        while i < bytes.len() && bytes[i].is_ascii_whitespace() {
+            i += 1;
+        }
+        if i >= bytes.len() || bytes[i] != b'{' {
+            continue;
+        }
+        i += 1;
+        let inner_start = i;
+        let mut depth = 1usize;
+        while i < bytes.len() {
+            match bytes[i] {
+                b'{' => depth += 1,
+                b'}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        break;
+                    }
+                }
+                _ => {}
+            }
+            i += 1;
+        }
+        if depth != 0 {
+            break;
+        }
+        let inner = &body[inner_start..i];
+        i += 1;
+        layers.push(parse_lyric_layer_fields(inner, span));
+    }
+    layers
+}
+
+fn parse_lyric_layer_fields(inner: &str, span: Span) -> LyricLayerDecl {
+    let mut decl = LyricLayerDecl {
+        role: None,
+        size: None,
+        align: None,
+        color: None,
+        highlight_color: None,
+        safe: None,
+        post_group: None,
+        span,
+    };
+    for raw in inner.lines() {
+        let line = raw.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let mut words = line.split_whitespace();
+        let Some(key) = words.next() else {
+            continue;
+        };
+        match key {
+            "role" => decl.role = words.next().map(str::to_owned),
+            "size" => {
+                if let Some(v) = words.next() {
+                    decl.size = v.parse().ok();
+                }
+            }
+            "align" => decl.align = words.next().map(str::to_owned),
+            "color" => {
+                if let Some(rest) = line.split_once("color").map(|(_, r)| r.trim()) {
+                    decl.color = quoted_or_token(rest);
+                }
+            }
+            "highlight" => {
+                // `highlight color "#ffe08a"`
+                let rest = line["highlight".len()..].trim();
+                if let Some(rest) = rest.strip_prefix("color") {
+                    decl.highlight_color = quoted_or_token(rest.trim());
+                }
+            }
+            "safe" => {
+                if let Some(v) = words.next() {
+                    decl.safe = v.parse().ok();
+                }
+            }
+            "post_group" => decl.post_group = words.next().map(str::to_owned),
+            _ => {}
+        }
+    }
+    decl
+}
+
+fn quoted_or_token(rest: &str) -> Option<String> {
+    let rest = rest.trim().trim_matches(';').trim();
+    if let Some(q) = rest.strip_prefix('"').and_then(|s| s.split('"').next()) {
+        Some(q.to_owned())
+    } else {
+        rest.split_whitespace().next().map(str::to_owned)
+    }
 }
 
 fn parse_lyric_lines(body: &str, span: Span) -> Vec<LyricLineDecl> {
@@ -422,12 +545,12 @@ fn parse_lyric_lines(body: &str, span: Span) -> Vec<LyricLineDecl> {
             break;
         }
         if !body[i..].starts_with("line") {
-            i += 1;
+            i = advance_utf8(body, i);
             continue;
         }
         let after = i + "line".len();
         if after < bytes.len() && (bytes[after].is_ascii_alphanumeric() || bytes[after] == b'_') {
-            i += 1;
+            i = advance_utf8(body, i);
             continue;
         }
         i = after;
@@ -468,31 +591,69 @@ fn parse_lyric_lines(body: &str, span: Span) -> Vec<LyricLineDecl> {
 
 fn parse_lyric_words(inner: &str, span: Span) -> Vec<LyricWordDecl> {
     let mut words = Vec::new();
-    for raw_line in inner.lines() {
-        let trimmed = raw_line.trim();
-        if !trimmed.starts_with("word") {
+    let mut rest = inner;
+    while let Some(rel) = rest.find("word") {
+        if rel > 0 {
+            let prev = rest[..rel].chars().last().unwrap_or(' ');
+            if prev.is_ascii_alphanumeric() || prev == '_' {
+                rest = &rest[rel + 4..];
+                continue;
+            }
+        }
+        let after_kw = &rest[rel + 4..];
+        if after_kw
+            .chars()
+            .next()
+            .is_some_and(|ch| ch.is_ascii_alphanumeric() || ch == '_')
+        {
+            rest = after_kw;
             continue;
         }
-        let rest = trimmed["word".len()..].trim();
-        let (text, range) = if let Some(rest) = rest.strip_prefix('"') {
-            let Some(end_quote) = rest.find('"') else {
-                continue;
+        let after = after_kw.trim_start();
+        if let Some(q) = after.strip_prefix('"') {
+            let Some(end_quote) = q.find('"') else {
+                break;
             };
-            let text = rest[..end_quote].to_owned();
-            let range = rest[end_quote + 1..].trim().trim_matches(';').trim().to_owned();
-            (text, range)
+            let text = q[..end_quote].to_owned();
+            let after_text = q[end_quote + 1..].trim_start();
+            let range = after_text
+                .split_whitespace()
+                .next()
+                .unwrap_or("")
+                .trim_matches(';')
+                .to_owned();
+            if text.is_empty() || !range.contains("..") {
+                rest = after_text;
+                continue;
+            }
+            let range_start = after_text.find(&range).unwrap_or(0);
+            words.push(LyricWordDecl {
+                text,
+                range: range.clone(),
+                span,
+            });
+            rest = &after_text[range_start + range.len()..];
         } else {
-            let mut parts = rest.split_whitespace();
+            let mut parts = after.split_whitespace();
             let Some(text) = parts.next() else {
-                continue;
+                break;
             };
-            let range = parts.collect::<Vec<_>>().join(" ");
-            (text.to_owned(), range)
-        };
-        if text.is_empty() || range.is_empty() {
-            continue;
+            let Some(range_raw) = parts.next() else {
+                break;
+            };
+            let range = range_raw.trim_matches(';').to_owned();
+            if !range.contains("..") {
+                rest = after;
+                continue;
+            }
+            let resume_at = after.find(&range).map(|i| i + range.len()).unwrap_or(after.len());
+            words.push(LyricWordDecl {
+                text: text.to_owned(),
+                range,
+                span,
+            });
+            rest = &after[resume_at..];
         }
-        words.push(LyricWordDecl { text, range, span });
     }
     words
 }
@@ -1037,6 +1198,33 @@ mod tests {
         assert_eq!(lyric.lines[0].words.len(), 2);
         assert_eq!(lyric.lines[0].words[0].text, "残");
         assert_eq!(lyric.lines[0].words[0].range, "0s..0.4s");
+    }
+
+    #[test]
+    fn parses_lyric_layer_block() {
+        let result = parse(
+            r##"lyric for main {
+  line { word "亮" 0s..1s }
+  layer {
+    role foreground
+    size 48
+    align center
+    highlight color "#ffe08a"
+    post_group none
+  }
+}"##,
+        );
+        assert!(result.diagnostics.is_empty(), "{:?}", result.diagnostics);
+        let Declaration::Block(block) = &result.script.declarations[0] else {
+            panic!("expected block");
+        };
+        let BlockContent::Lyric(lyric) = &block.content else {
+            panic!("expected lyric");
+        };
+        assert_eq!(lyric.layers.len(), 1);
+        assert_eq!(lyric.layers[0].role.as_deref(), Some("foreground"));
+        assert_eq!(lyric.layers[0].size, Some(48.0));
+        assert_eq!(lyric.layers[0].highlight_color.as_deref(), Some("#ffe08a"));
     }
 
     #[test]

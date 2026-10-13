@@ -206,6 +206,67 @@ pub struct LyricWord {
     pub end: f64,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LyricLayerRole {
+    Foreground,
+    Background,
+    BurnIn,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LyricAlign {
+    Start,
+    Center,
+    End,
+}
+
+/// Appearance binding for a [`LyricTrack`] (doc 14 §5). Not `fx stamp`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LyricLayer {
+    pub id: String,
+    pub track: String,
+    pub role: LyricLayerRole,
+    /// Pixel size; `0` means compose picks from frame height.
+    pub size_px: f64,
+    pub color: [u8; 3],
+    pub highlight_color: [u8; 3],
+    pub align: LyricAlign,
+    /// Uniform safe margin as a fraction of the shorter frame edge.
+    pub safe_margin: f64,
+    /// `None` / `"none"` → draw after bloom (default).
+    pub post_group: Option<String>,
+}
+
+impl LyricTrack {
+    /// Active word at wall-clock seconds (`[start, end)`).
+    pub fn active_word_at(&self, t: f64) -> Option<&LyricWord> {
+        let t = t.max(0.0);
+        for line in &self.lines {
+            if let Some(word) = line
+                .words
+                .iter()
+                .find(|w| w.start <= t && t < w.end)
+            {
+                return Some(word);
+            }
+        }
+        None
+    }
+
+    /// Active line at wall-clock seconds (first line whose word range covers `t`).
+    pub fn active_line_at(&self, t: f64) -> Option<&LyricLine> {
+        let t = t.max(0.0);
+        self.lines.iter().find(|line| {
+            line.words
+                .first()
+                .zip(line.words.last())
+                .is_some_and(|(a, b)| a.start <= t && t < b.end)
+        })
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RenderPlan {
     pub settings: RenderSettings,
@@ -218,6 +279,7 @@ pub struct RenderPlan {
     pub audio_source: AudioSourceKind,
     pub audio_tracks: Vec<AudioTrack>,
     pub lyric_tracks: Vec<LyricTrack>,
+    pub lyric_layers: Vec<LyricLayer>,
     pub visual_layers: usize,
     pub visuals: Vec<VisualLayer>,
     pub transitions: usize,
@@ -259,7 +321,9 @@ pub fn compile_with(source: &str, settings: RenderSettings, options: CompileOpti
     let mut audio_tracks = Vec::new();
     let mut audio_ids = BTreeSet::new();
     let mut lyric_tracks = Vec::new();
+    let mut lyric_layers = Vec::new();
     let mut lyric_ids = BTreeSet::new();
+    let mut lyric_layer_ids = BTreeSet::new();
 
     // Pre-scan tempo/meter so timeline conversion sees the full-file clock (ADR 0006 / doc 13).
     let mut bpm = 120.0;
@@ -853,6 +917,31 @@ pub fn compile_with(source: &str, settings: RenderSettings, options: CompileOpti
                         ));
                         continue;
                     }
+                    if declaration.layers.is_empty() {
+                        let layer_id = format!("{track_id}_layer");
+                        lyric_layer_ids.insert(layer_id.clone());
+                        lyric_layers.push(default_lyric_layer(layer_id, track_id.clone()));
+                    } else {
+                        for (layer_idx, layer_decl) in declaration.layers.iter().enumerate() {
+                            let layer_id = format!("{track_id}_layer{}", layer_idx + 1);
+                            if !lyric_layer_ids.insert(layer_id.clone()) {
+                                diagnostics.push(Diagnostic::error(
+                                    format!("duplicate lyric layer id `{layer_id}`"),
+                                    layer_decl.span,
+                                ));
+                                continue;
+                            }
+                            match lower_lyric_layer(
+                                layer_id,
+                                track_id.clone(),
+                                layer_decl,
+                                &mut diagnostics,
+                            ) {
+                                Some(layer) => lyric_layers.push(layer),
+                                None => continue,
+                            }
+                        }
+                    }
                     lyric_tracks.push(LyricTrack {
                         id: track_id,
                         act: block.target.clone(),
@@ -942,6 +1031,7 @@ pub fn compile_with(source: &str, settings: RenderSettings, options: CompileOpti
         audio_source,
         audio_tracks,
         lyric_tracks,
+        lyric_layers,
         visual_layers: visuals,
         visuals: visual_layers,
         transitions,
@@ -949,6 +1039,123 @@ pub fn compile_with(source: &str, settings: RenderSettings, options: CompileOpti
         orchestration,
     });
     Compilation { plan, diagnostics }
+}
+
+fn default_lyric_layer(id: String, track: String) -> LyricLayer {
+    LyricLayer {
+        id,
+        track,
+        role: LyricLayerRole::Foreground,
+        size_px: 0.0,
+        color: [240, 240, 245],
+        highlight_color: [255, 224, 138],
+        align: LyricAlign::Center,
+        safe_margin: 0.08,
+        post_group: Some("none".into()),
+    }
+}
+
+fn lower_lyric_layer(
+    id: String,
+    track: String,
+    decl: &muse_parser::LyricLayerDecl,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Option<LyricLayer> {
+    let role = match decl
+        .role
+        .as_deref()
+        .unwrap_or("foreground")
+        .trim()
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "foreground" | "fg" => LyricLayerRole::Foreground,
+        "background" | "bg" => LyricLayerRole::Background,
+        "burn_in" | "burnin" => LyricLayerRole::BurnIn,
+        other => {
+            diagnostics.push(Diagnostic::error(
+                format!("unknown lyric layer role `{other}` (foreground|background|burn_in)"),
+                decl.span,
+            ));
+            return None;
+        }
+    };
+    let align = match decl
+        .align
+        .as_deref()
+        .unwrap_or("center")
+        .trim()
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "start" | "left" => LyricAlign::Start,
+        "center" | "middle" => LyricAlign::Center,
+        "end" | "right" => LyricAlign::End,
+        other => {
+            diagnostics.push(Diagnostic::error(
+                format!("unknown lyric align `{other}` (start|center|end)"),
+                decl.span,
+            ));
+            return None;
+        }
+    };
+    let color = match decl.color.as_deref() {
+        Some(raw) => match parse_hex_rgb(raw) {
+            Some(rgb) => rgb,
+            None => {
+                diagnostics.push(Diagnostic::error(
+                    format!("invalid lyric color `{raw}` (expected #RRGGBB)"),
+                    decl.span,
+                ));
+                return None;
+            }
+        },
+        None => [240, 240, 245],
+    };
+    let highlight_color = match decl.highlight_color.as_deref() {
+        Some(raw) => match parse_hex_rgb(raw) {
+            Some(rgb) => rgb,
+            None => {
+                diagnostics.push(Diagnostic::error(
+                    format!("invalid lyric highlight color `{raw}` (expected #RRGGBB)"),
+                    decl.span,
+                ));
+                return None;
+            }
+        },
+        None => [255, 224, 138],
+    };
+    let size_px = decl.size.unwrap_or(0.0);
+    if size_px < 0.0 {
+        diagnostics.push(Diagnostic::error(
+            "lyric layer size must be non-negative",
+            decl.span,
+        ));
+        return None;
+    }
+    let safe_margin = decl.safe.unwrap_or(0.08).clamp(0.0, 0.45);
+    Some(LyricLayer {
+        id,
+        track,
+        role,
+        size_px,
+        color,
+        highlight_color,
+        align,
+        safe_margin,
+        post_group: decl.post_group.clone().or_else(|| Some("none".into())),
+    })
+}
+
+fn parse_hex_rgb(raw: &str) -> Option<[u8; 3]> {
+    let hex = raw.trim().trim_start_matches('#');
+    if hex.len() != 6 {
+        return None;
+    }
+    let r = u8::from_str_radix(&hex[0..2], 16).ok()?;
+    let g = u8::from_str_radix(&hex[2..4], 16).ok()?;
+    let b = u8::from_str_radix(&hex[4..6], 16).ok()?;
+    Some([r, g, b])
 }
 
 fn resolve_audio_uri(from: &str, assets: &[Asset]) -> Option<String> {
@@ -1431,6 +1638,40 @@ lyric for main {
         assert!((track.lines[0].words[0].start - 0.0).abs() < 1e-9);
         assert!((track.lines[0].words[0].end - 0.4).abs() < 1e-9);
         assert!((track.lines[0].words[1].start - 0.4).abs() < 1e-9);
+        assert_eq!(plan.lyric_layers.len(), 1);
+        assert_eq!(plan.lyric_layers[0].track, "main");
+        assert_eq!(
+            track.active_word_at(0.5).map(|w| w.text.as_str()),
+            Some("响")
+        );
+    }
+
+    #[test]
+    fn compiles_lyric_layer_appearance() {
+        let c = compile(
+            r##"timeline { act main : 0s..2s }
+tempo { bpm 120 }
+lyric for main {
+  lang "zh-Hans"
+  line { word "亮" 0s..1s word "起" 1s..2s }
+  layer {
+    role foreground
+    size 42
+    align center
+    highlight color "#ffe08a"
+    safe 0.1
+    post_group none
+  }
+}"##,
+            RenderSettings::default(),
+        );
+        assert!(c.is_success(), "{:?}", c.diagnostics);
+        let plan = c.plan.expect("layer plan");
+        assert_eq!(plan.lyric_layers.len(), 1);
+        let layer = &plan.lyric_layers[0];
+        assert!((layer.size_px - 42.0).abs() < 1e-9);
+        assert_eq!(layer.highlight_color, [255, 224, 138]);
+        assert!((layer.safe_margin - 0.1).abs() < 1e-9);
     }
 
     #[test]

@@ -218,6 +218,7 @@ mod tests {
                 tail_silence: 0.0,
             }],
             lyric_tracks: vec![],
+            lyric_layers: vec![],
             visual_layers: 0,
             visuals: vec![],
             transitions: 0,

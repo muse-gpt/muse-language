@@ -1,9 +1,10 @@
-//! Rasterize stamp glyph labels with a system CJK-capable font.
+//! Rasterize stamp glyph labels and lyric captions with a system CJK-capable font.
 //!
 //! Falls back silently when no usable font is found (geometry stamp still draws).
 
 use ab_glyph::{Font, FontArc, PxScale, ScaleFont, point};
 use image::RgbImage;
+use muse_ir::{LyricAlign, LyricLayer, LyricLine, LyricWord};
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
@@ -104,6 +105,112 @@ pub fn draw_stamp_label(
     }
 }
 
+/// Draw the active lyric line near the bottom safe area; highlight the active word.
+pub fn draw_lyric_caption(
+    canvas: &mut RgbImage,
+    layer: &LyricLayer,
+    line: &LyricLine,
+    active: Option<&LyricWord>,
+) {
+    if line.words.is_empty() {
+        return;
+    }
+    let Some(font) = system_font() else {
+        return;
+    };
+    let short = canvas.width().min(canvas.height()).max(1) as f32;
+    let margin = (short * layer.safe_margin.clamp(0.0, 0.45) as f32).max(4.0);
+    let px = if layer.size_px > 0.0 {
+        layer.size_px as f32
+    } else {
+        (short * 0.055).clamp(14.0, short * 0.12)
+    };
+    let scale = PxScale::from(px);
+    let scaled = font.as_scaled(scale);
+    let gap = scaled.h_advance(font.glyph_id(' ')) * 0.35;
+
+    let mut runs: Vec<(String, [u8; 3], f32)> = Vec::new();
+    let mut total_w = 0.0_f32;
+    for (idx, word) in line.words.iter().enumerate() {
+        let color = if active.is_some_and(|a| a.id == word.id) {
+            layer.highlight_color
+        } else {
+            layer.color
+        };
+        let mut caret = 0.0_f32;
+        for ch in word.text.chars() {
+            caret += scaled.h_advance(font.glyph_id(ch));
+        }
+        if idx > 0 {
+            total_w += gap;
+        }
+        total_w += caret;
+        runs.push((word.text.clone(), color, caret));
+    }
+    if total_w <= 0.0 {
+        return;
+    }
+
+    let max_w = (canvas.width() as f32 - margin * 2.0).max(8.0);
+    let origin_x = match layer.align {
+        LyricAlign::Start => margin,
+        LyricAlign::Center => ((canvas.width() as f32 - total_w.min(max_w)) * 0.5).max(margin),
+        LyricAlign::End => (canvas.width() as f32 - margin - total_w.min(max_w)).max(margin),
+    };
+    let baseline = canvas.height() as f32 - margin - px * 0.25;
+
+    let mut x = origin_x;
+    for (text, color, width) in runs {
+        draw_text_run(canvas, font, &text, scale, x, baseline, color, 0.95);
+        x += width + gap;
+        if x > canvas.width() as f32 - margin {
+            break;
+        }
+    }
+}
+
+fn draw_text_run(
+    canvas: &mut RgbImage,
+    font: &FontArc,
+    text: &str,
+    scale: PxScale,
+    origin_x: f32,
+    baseline: f32,
+    color: [u8; 3],
+    opacity: f32,
+) {
+    let scaled = font.as_scaled(scale);
+    let mut caret = 0.0_f32;
+    for ch in text.chars() {
+        let id = font.glyph_id(ch);
+        let glyph = id.with_scale_and_position(scale, point(origin_x + caret, baseline));
+        caret += scaled.h_advance(id);
+        let Some(outlined) = font.outline_glyph(glyph) else {
+            continue;
+        };
+        let bounds = outlined.px_bounds();
+        outlined.draw(|gx, gy, c| {
+            if c <= 0.0 {
+                return;
+            }
+            let px = bounds.min.x as i32 + gx as i32;
+            let py = bounds.min.y as i32 + gy as i32;
+            if px < 0 || py < 0 {
+                return;
+            }
+            let (px, py) = (px as u32, py as u32);
+            if px >= canvas.width() || py >= canvas.height() {
+                return;
+            }
+            let cover = (c * opacity).clamp(0.0, 1.0);
+            let p = canvas.get_pixel_mut(px, py);
+            p[0] = mix_u8(p[0], color[0], cover);
+            p[1] = mix_u8(p[1], color[1], cover);
+            p[2] = mix_u8(p[2], color[2], cover);
+        });
+    }
+}
+
 fn mix_u8(src: u8, dst: u8, t: f32) -> u8 {
     (src as f32 * (1.0 - t) + dst as f32 * t).round() as u8
 }
@@ -151,6 +258,48 @@ mod tests {
         draw_stamp_label(&mut canvas, "残", 0.9, 0.5);
         let warm = canvas.pixels().any(|p| p[0] > 180 && p[1] < 160 && p[2] < 120);
         assert!(warm, "expected vermilion stamp pixels from ab_glyph");
+    }
+
+    #[test]
+    fn draws_lyric_highlight_when_system_font_available() {
+        let Some(_) = system_font() else {
+            eprintln!("skip: no system CJK font");
+            return;
+        };
+        let mut canvas = RgbImage::from_pixel(320, 180, Rgb([11, 21, 36]));
+        let line = LyricLine {
+            id: "L1".into(),
+            words: vec![
+                LyricWord {
+                    id: "W1".into(),
+                    text: "残".into(),
+                    start: 0.0,
+                    end: 0.5,
+                },
+                LyricWord {
+                    id: "W2".into(),
+                    text: "响".into(),
+                    start: 0.5,
+                    end: 1.0,
+                },
+            ],
+        };
+        let layer = LyricLayer {
+            id: "main_layer".into(),
+            track: "main".into(),
+            role: muse_ir::LyricLayerRole::Foreground,
+            size_px: 36.0,
+            color: [200, 200, 210],
+            highlight_color: [255, 224, 138],
+            align: LyricAlign::Center,
+            safe_margin: 0.08,
+            post_group: Some("none".into()),
+        };
+        draw_lyric_caption(&mut canvas, &layer, &line, Some(&line.words[0]));
+        let warm = canvas
+            .pixels()
+            .any(|p| p[0] > 200 && p[1] > 180 && p[2] < 180);
+        assert!(warm, "expected highlight lyric pixels");
     }
 }
 

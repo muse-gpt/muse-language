@@ -222,6 +222,8 @@ fn compose_frame_cpu(
     if let Some(strength) = layers_bloom(&layers) {
         apply_bloom_rgb(&mut canvas, strength);
     }
+    // Lyrics default to post_group none — draw after bloom (doc 14).
+    paint_lyric_layers(&mut canvas, plan, t);
     if let Some(strength) = layers_vignette(&layers) {
         apply_vignette_rgb(&mut canvas, strength);
     }
@@ -275,6 +277,7 @@ fn compose_frame_gpu(
             crate::font_stamp::draw_stamp_label(&mut canvas, label, strength, progress);
         }
     }
+    paint_lyric_layers(&mut canvas, plan, t);
     paint_progress_cue(&mut canvas, t);
     Ok(canvas)
 }
@@ -343,6 +346,27 @@ pub fn plan_bloom(plan: &RenderPlan) -> Option<f32> {
 /// Last declared LUT name + mix on the plan, if any.
 pub fn plan_lut(plan: &RenderPlan) -> Option<(String, f32)> {
     layers_lut(&plan.visuals.iter().collect::<Vec<_>>())
+}
+
+fn paint_lyric_layers(canvas: &mut RgbImage, plan: &RenderPlan, t_norm: f32) {
+    if plan.lyric_layers.is_empty() || plan.lyric_tracks.is_empty() {
+        return;
+    }
+    let duration = plan.duration_seconds;
+    if duration <= 0.0 {
+        return;
+    }
+    let t_sec = f64::from(t_norm.clamp(0.0, 1.0)) * duration;
+    for layer in &plan.lyric_layers {
+        let Some(track) = plan.lyric_tracks.iter().find(|tr| tr.id == layer.track) else {
+            continue;
+        };
+        let Some(line) = track.active_line_at(t_sec) else {
+            continue;
+        };
+        let active = track.active_word_at(t_sec);
+        crate::font_stamp::draw_lyric_caption(canvas, layer, line, active);
+    }
 }
 
 fn layers_background_rgb(layers: &[&muse_ir::VisualLayer]) -> (u8, u8, u8) {

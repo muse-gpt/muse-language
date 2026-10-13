@@ -237,6 +237,21 @@ pub struct LyricDecl {
     /// Asset name or path for external timing JSON (`from …`); first slice may leave unloaded.
     pub from: Option<String>,
     pub lines: Vec<LyricLineDecl>,
+    /// Optional appearance block(s); compile may synthesize a default layer.
+    pub layers: Vec<LyricLayerDecl>,
+}
+
+/// `layer { role … size … align … }` inside a lyric block.
+#[derive(Debug, Clone, Serialize)]
+pub struct LyricLayerDecl {
+    pub role: Option<String>,
+    pub size: Option<f64>,
+    pub align: Option<String>,
+    pub color: Option<String>,
+    pub highlight_color: Option<String>,
+    pub safe: Option<f64>,
+    pub post_group: Option<String>,
+    pub span: Span,
 }
 
 #[derive(Debug, Clone, Serialize)]

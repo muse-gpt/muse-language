@@ -7,9 +7,9 @@ mod parser;
 mod time_parse;
 
 pub use ast::{
-    ActDecl, AudioTrackDecl, Block, BlockContent, BlockKind, Declaration, EmotionDecl, LyricDecl, LyricLineDecl,
-    LyricWordDecl, MappingDecl, MeterDecl, MusicDecl, OrchestrationDecl, Script, ShotDecl, TempoDecl, TimePoint,
-    TimeUnit, VisualAssetKind, VisualDecl,
+    ActDecl, AudioTrackDecl, Block, BlockContent, BlockKind, Declaration, EmotionDecl, LyricDecl, LyricLayerDecl,
+    LyricLineDecl, LyricWordDecl, MappingDecl, MeterDecl, MusicDecl, OrchestrationDecl, Script, ShotDecl,
+    TempoDecl, TimePoint, TimeUnit, VisualAssetKind, VisualDecl,
 };
 pub use lexer::{Token, TokenKind, lex};
 pub use parser::{ParseOutput, parse};
