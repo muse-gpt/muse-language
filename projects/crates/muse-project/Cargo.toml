@@ -10,5 +10,4 @@ oak-von.workspace = true
 serde.workspace = true
 serde_yaml.workspace = true
 sha2.workspace = true
-toml.workspace = true
 symphonia.workspace = true

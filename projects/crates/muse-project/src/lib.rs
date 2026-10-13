@@ -47,42 +47,28 @@ pub fn resolve_render_settings(
     settings
 }
 
-/// Resolve the project manifest path: prefer root `muse.von`, fall back to legacy `muse.toml`.
+/// Resolve the project manifest path: root `muse.von` only (true VON; no `muse.toml`).
 pub fn manifest_path(project: &Path) -> Result<std::path::PathBuf> {
     let von = project.join("muse.von");
     if von.is_file() {
         return Ok(von);
     }
-    let toml = project.join("muse.toml");
-    if toml.is_file() {
-        return Ok(toml);
-    }
     bail!(
-        "project manifest not found at {} (expected muse.von)",
+        "project manifest not found at {} (expected muse.von; muse.toml is not accepted)",
         von.display()
     )
 }
 
 /// 读取并校验工程清单，确保入口和产物 id 在工程内唯一且路径不为空。
 ///
-/// `muse.von` is **true VON** (oak-von). Parsing it as TOML is a contract bug.
-/// Legacy `muse.toml` remains TOML-only during migration.
+/// `muse.von` is **true VON** (`oak-von`). TOML content or a `muse.toml` file is rejected.
 pub fn load_manifest(project: &Path) -> Result<ProjectManifest> {
     let path = manifest_path(project)?;
     let raw =
         fs::read_to_string(&path).with_context(|| format!("cannot read {}", path.display()))?;
-    let manifest: ProjectManifest = if path
-        .file_name()
-        .and_then(|n| n.to_str())
-        .is_some_and(|n| n.eq_ignore_ascii_case("muse.von"))
-    {
-        oak_von::from_str(&raw).map_err(|err| {
-            anyhow::anyhow!("invalid VON project manifest {}: {err}", path.display())
-        })?
-    } else {
-        toml::from_str(&raw)
-            .with_context(|| format!("invalid TOML project manifest {}", path.display()))?
-    };
+    let manifest: ProjectManifest = oak_von::from_str(&raw).map_err(|err| {
+        anyhow::anyhow!("invalid VON project manifest {}: {err}", path.display())
+    })?;
     validate_manifest(&manifest)?;
     Ok(manifest)
 }
@@ -354,6 +340,30 @@ source = "e.muse"
         assert!(root.join("library").is_dir());
         let manifest = load_manifest(&root).unwrap();
         assert_eq!(manifest.entries[0].source, "assets/scenes/main.muse");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn rejects_muse_toml_even_when_present() {
+        let stamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let root = env::temp_dir().join(format!("muse-project-toml-only-{stamp}"));
+        fs::create_dir_all(&root).unwrap();
+        fs::write(
+            root.join("muse.toml"),
+            r#"[project]
+id = "p"
+version = "0.1"
+[[entries]]
+id = "e"
+source = "e.muse"
+"#,
+        )
+        .unwrap();
+        let err = load_manifest(&root).unwrap_err().to_string();
+        assert!(
+            err.contains("muse.von") && err.to_lowercase().contains("toml"),
+            "{err}"
+        );
         let _ = fs::remove_dir_all(root);
     }
 }

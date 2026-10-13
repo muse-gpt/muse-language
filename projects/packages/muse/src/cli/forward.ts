@@ -58,13 +58,7 @@ function inferAssetRoot(scriptPath: string): string {
             readFileSync(join(dir, "muse.von"));
             return dir;
         } catch {
-            /* try muse.toml */
-        }
-        try {
-            readFileSync(join(dir, "muse.toml"));
-            return dir;
-        } catch {
-            /* climb */
+            /* climb; muse.toml is not accepted */
         }
         const parent = dirname(dir);
         if (parent === dir) break;
