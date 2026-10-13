@@ -174,6 +174,29 @@ pub struct AudioTrack {
     pub tail_silence: f64,
 }
 
+/// Frozen lyric track (doc 14). Independent from `fx stamp`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LyricTrack {
+    pub id: String,
+    pub act: Option<String>,
+    pub lang: String,
+    pub lines: Vec<LyricLine>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LyricLine {
+    pub id: String,
+    pub words: Vec<LyricWord>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LyricWord {
+    pub id: String,
+    pub text: String,
+    pub start: f64,
+    pub end: f64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RenderPlan {
     pub settings: RenderSettings,
@@ -185,6 +208,7 @@ pub struct RenderPlan {
     pub assets: Vec<Asset>,
     pub audio_source: AudioSourceKind,
     pub audio_tracks: Vec<AudioTrack>,
+    pub lyric_tracks: Vec<LyricTrack>,
     pub visual_layers: usize,
     pub visuals: Vec<VisualLayer>,
     pub transitions: usize,
@@ -221,6 +245,8 @@ pub fn compile(source: &str, settings: RenderSettings) -> Compilation {
     let mut orchestration = Vec::new();
     let mut audio_tracks = Vec::new();
     let mut audio_ids = BTreeSet::new();
+    let mut lyric_tracks = Vec::new();
+    let mut lyric_ids = BTreeSet::new();
 
     // Pre-scan tempo/meter so timeline conversion sees the full-file clock (ADR 0006 / doc 13).
     let mut bpm = 120.0;
@@ -712,6 +738,104 @@ pub fn compile(source: &str, settings: RenderSettings) -> Compilation {
                         });
                     }
                 }
+                BlockKind::Lyric => {
+                    let BlockContent::Lyric(declaration) = &block.content else {
+                        continue;
+                    };
+                    let track_id = block
+                        .target
+                        .clone()
+                        .unwrap_or_else(|| format!("lyric_{}", lyric_tracks.len() + 1));
+                    if !lyric_ids.insert(track_id.clone()) {
+                        diagnostics.push(Diagnostic::error(
+                            format!("duplicate lyric track id `{track_id}`"),
+                            block.span,
+                        ));
+                        continue;
+                    }
+                    if let Some(act) = &block.target {
+                        if !acts.iter().any(|a| a.name == *act) {
+                            diagnostics.push(Diagnostic::error(
+                                format!("unknown lyric target act `{act}`"),
+                                block.span,
+                            ));
+                        }
+                    }
+                    if declaration.from.is_some() && declaration.lines.is_empty() {
+                        diagnostics.push(Diagnostic::error(
+                            format!(
+                                "lyric track `{track_id}` uses `from` without inline lines; timing JSON import is not wired yet"
+                            ),
+                            block.span,
+                        ));
+                        continue;
+                    }
+                    if declaration.lines.is_empty() {
+                        diagnostics.push(Diagnostic::error(
+                            format!("lyric track `{track_id}` has no lines"),
+                            block.span,
+                        ));
+                        continue;
+                    }
+                    let mut lines = Vec::new();
+                    for (line_idx, line_decl) in declaration.lines.iter().enumerate() {
+                        let line_id = format!("L{}", line_idx + 1);
+                        let mut words = Vec::new();
+                        for (word_idx, word_decl) in line_decl.words.iter().enumerate() {
+                            let Some((start_pt, end_pt)) = parse_time_range(&word_decl.range) else {
+                                diagnostics.push(Diagnostic::error(
+                                    format!(
+                                        "lyric word `{}` needs an increasing time range (e.g. 0s..0.4s)",
+                                        word_decl.text
+                                    ),
+                                    word_decl.span,
+                                ));
+                                continue;
+                            };
+                            let start = time_map.point_to_seconds(start_pt);
+                            let end = time_map.point_to_seconds(end_pt);
+                            if end <= start {
+                                diagnostics.push(Diagnostic::error(
+                                    format!(
+                                        "lyric word `{}` end must be after start",
+                                        word_decl.text
+                                    ),
+                                    word_decl.span,
+                                ));
+                                continue;
+                            }
+                            words.push(LyricWord {
+                                id: format!("W{}", word_idx + 1),
+                                text: word_decl.text.clone(),
+                                start,
+                                end,
+                            });
+                        }
+                        if words.is_empty() {
+                            diagnostics.push(Diagnostic::error(
+                                format!("lyric line `{line_id}` has no words"),
+                                line_decl.span,
+                            ));
+                            continue;
+                        }
+                        lines.push(LyricLine {
+                            id: line_id,
+                            words,
+                        });
+                    }
+                    if lines.is_empty() {
+                        continue;
+                    }
+                    lyric_tracks.push(LyricTrack {
+                        id: track_id,
+                        act: block.target.clone(),
+                        lang: declaration
+                            .lang
+                            .clone()
+                            .unwrap_or_else(|| "und".to_owned()),
+                        lines,
+                    });
+                }
                 BlockKind::Orchestrate => {
                     let target = block.target.unwrap_or_else(|| "entire_song".to_owned());
                     if target != "entire_song" && !acts.iter().any(|act| act.name == target) {
@@ -765,6 +889,13 @@ pub fn compile(source: &str, settings: RenderSettings) -> Compilation {
             duration = duration.max(track.timeline_offset + playable + track.tail_silence);
         }
     }
+    for track in &lyric_tracks {
+        for line in &track.lines {
+            for word in &line.words {
+                duration = duration.max(word.end);
+            }
+        }
+    }
     let audio_source = if audio_tracks.is_empty() {
         AudioSourceKind::PlaceholderTone
     } else {
@@ -782,6 +913,7 @@ pub fn compile(source: &str, settings: RenderSettings) -> Compilation {
         assets,
         audio_source,
         audio_tracks,
+        lyric_tracks,
         visual_layers: visuals,
         visuals: visual_layers,
         transitions,
@@ -1218,6 +1350,32 @@ mod tests {
         assert!((plan.duration_seconds - 30.0).abs() < 1e-9);
         assert!((plan.shots[0].end_seconds - 8.0).abs() < 1e-9);
         assert!(plan.shot_at_seconds(4.0).map(|s| s.id.as_str()) == Some("c01"));
+    }
+
+    #[test]
+    fn compiles_inline_lyric_track() {
+        let c = compile(
+            r#"timeline { act main : 0s..3s }
+tempo { bpm 120 }
+lyric for main {
+  lang "zh-Hans"
+  line {
+    word "残" 0s..0.4s
+    word "响" 0.4s..0.8s
+  }
+}"#,
+            RenderSettings::default(),
+        );
+        assert!(c.is_success(), "{:?}", c.diagnostics);
+        let plan = c.plan.expect("lyric plan");
+        assert_eq!(plan.lyric_tracks.len(), 1);
+        let track = &plan.lyric_tracks[0];
+        assert_eq!(track.id, "main");
+        assert_eq!(track.lang, "zh-Hans");
+        assert_eq!(track.lines[0].words[0].text, "残");
+        assert!((track.lines[0].words[0].start - 0.0).abs() < 1e-9);
+        assert!((track.lines[0].words[0].end - 0.4).abs() < 1e-9);
+        assert!((track.lines[0].words[1].start - 0.4).abs() < 1e-9);
     }
 
     #[test]

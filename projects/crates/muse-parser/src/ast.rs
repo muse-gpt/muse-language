@@ -55,6 +55,7 @@ pub enum BlockContent {
     Visual { elements: Vec<VisualDecl> },
     Music(MusicDecl),
     Audio { tracks: Vec<AudioTrackDecl> },
+    Lyric(LyricDecl),
 }
 
 /// Timeline / shot endpoint unit. Bare numbers default to [`TimeUnit::Bars`].
@@ -229,6 +230,29 @@ pub struct AudioTrackDecl {
     pub span: Span,
 }
 
+/// `lyric for act { lang …; line { word "…" start..end } }` (doc 14). Not `fx stamp`.
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct LyricDecl {
+    pub lang: Option<String>,
+    /// Asset name or path for external timing JSON (`from …`); first slice may leave unloaded.
+    pub from: Option<String>,
+    pub lines: Vec<LyricLineDecl>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct LyricLineDecl {
+    pub words: Vec<LyricWordDecl>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct LyricWordDecl {
+    pub text: String,
+    /// Raw range token (`0s..0.4s` / `0..1bar`); compile converts via TimeMap.
+    pub range: String,
+    pub span: Span,
+}
+
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub enum BlockKind {
     Intent,
@@ -236,6 +260,7 @@ pub enum BlockKind {
     Tempo,
     Music,
     Audio,
+    Lyric,
     Visual,
     Orchestrate,
     /// Deprecated compatibility spelling. New scripts should use `orchestrate`.

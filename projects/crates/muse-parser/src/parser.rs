@@ -3,7 +3,8 @@ use muse_types::{Diagnostic, Span};
 
 use crate::{
     ast::{
-        ActDecl, AudioTrackDecl, Block, BlockContent, BlockKind, Declaration, EmotionDecl, MappingDecl, MeterDecl,
+        ActDecl, AudioTrackDecl, Block, BlockContent, BlockKind, Declaration, EmotionDecl, LyricDecl,
+        LyricLineDecl, LyricWordDecl, MappingDecl, MeterDecl,
         MusicDecl, OrchestrationDecl, Script, ShotDecl, TempoDecl, VisualAssetKind, VisualDecl,
     },
     diagnostics::from_chumsky,
@@ -38,6 +39,7 @@ pub fn parse(source: &str) -> ParseOutput {
             | TokenKind::Tempo
             | TokenKind::Music
             | TokenKind::Audio
+            | TokenKind::Lyric
             | TokenKind::Visual
             | TokenKind::Orchestrate
             | TokenKind::Directing => parse_block(source, &tokens, &mut index, &mut declarations, &mut diagnostics),
@@ -220,7 +222,11 @@ fn parse_block(
     *index += 1;
     let target = if matches!(
         kind,
-        BlockKind::Music | BlockKind::Audio | BlockKind::Visual | BlockKind::Orchestrate
+        BlockKind::Music
+            | BlockKind::Audio
+            | BlockKind::Lyric
+            | BlockKind::Visual
+            | BlockKind::Orchestrate
     ) && consume(tokens, index, TokenKind::For)
     {
         let target = identifier(tokens, *index);
@@ -374,11 +380,121 @@ fn typed_content(source: &str, kind: BlockKind, body: &str, body_span: Span) -> 
         BlockKind::Audio => BlockContent::Audio {
             tracks: parse_audio_tracks(body, body_span),
         },
+        BlockKind::Lyric => BlockContent::Lyric(parse_lyric_decl(body, body_span)),
         _ => {
             let _ = source;
             BlockContent::Raw
         }
     }
+}
+
+/// Parse `lang "…"`, optional `from …`, and nested `line { word "…" range }` bodies.
+fn parse_lyric_decl(body: &str, span: Span) -> LyricDecl {
+    let mut decl = LyricDecl::default();
+    for line in body.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("lang") {
+            if let Some(lang) = quoted_after(trimmed, "lang") {
+                decl.lang = Some(lang);
+            }
+        } else if trimmed.starts_with("from") {
+            let rest = trimmed["from".len()..].trim().trim_matches(';').trim();
+            if let Some(q) = rest.strip_prefix('"').and_then(|s| s.split('"').next()) {
+                decl.from = Some(q.to_owned());
+            } else if !rest.is_empty() {
+                decl.from = Some(rest.to_owned());
+            }
+        }
+    }
+    decl.lines = parse_lyric_lines(body, span);
+    decl
+}
+
+fn parse_lyric_lines(body: &str, span: Span) -> Vec<LyricLineDecl> {
+    let mut lines = Vec::new();
+    let bytes = body.as_bytes();
+    let mut i = 0usize;
+    while i < bytes.len() {
+        while i < bytes.len() && bytes[i].is_ascii_whitespace() {
+            i += 1;
+        }
+        if i >= bytes.len() {
+            break;
+        }
+        if !body[i..].starts_with("line") {
+            i += 1;
+            continue;
+        }
+        let after = i + "line".len();
+        if after < bytes.len() && (bytes[after].is_ascii_alphanumeric() || bytes[after] == b'_') {
+            i += 1;
+            continue;
+        }
+        i = after;
+        while i < bytes.len() && bytes[i].is_ascii_whitespace() {
+            i += 1;
+        }
+        if i >= bytes.len() || bytes[i] != b'{' {
+            continue;
+        }
+        i += 1;
+        let inner_start = i;
+        let mut depth = 1usize;
+        while i < bytes.len() {
+            match bytes[i] {
+                b'{' => depth += 1,
+                b'}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        break;
+                    }
+                }
+                _ => {}
+            }
+            i += 1;
+        }
+        if depth != 0 {
+            break;
+        }
+        let inner = &body[inner_start..i];
+        i += 1;
+        let words = parse_lyric_words(inner, span);
+        if !words.is_empty() {
+            lines.push(LyricLineDecl { words, span });
+        }
+    }
+    lines
+}
+
+fn parse_lyric_words(inner: &str, span: Span) -> Vec<LyricWordDecl> {
+    let mut words = Vec::new();
+    for raw_line in inner.lines() {
+        let trimmed = raw_line.trim();
+        if !trimmed.starts_with("word") {
+            continue;
+        }
+        let rest = trimmed["word".len()..].trim();
+        let (text, range) = if let Some(rest) = rest.strip_prefix('"') {
+            let Some(end_quote) = rest.find('"') else {
+                continue;
+            };
+            let text = rest[..end_quote].to_owned();
+            let range = rest[end_quote + 1..].trim().trim_matches(';').trim().to_owned();
+            (text, range)
+        } else {
+            let mut parts = rest.split_whitespace();
+            let Some(text) = parts.next() else {
+                continue;
+            };
+            let range = parts.collect::<Vec<_>>().join(" ");
+            (text.to_owned(), range)
+        };
+        if text.is_empty() || range.is_empty() {
+            continue;
+        }
+        words.push(LyricWordDecl { text, range, span });
+    }
+    words
 }
 
 /// Parse nested `track id { … }` declarations inside an `audio` block body.
@@ -814,6 +930,7 @@ fn block_kind(token: &TokenKind) -> Option<BlockKind> {
         TokenKind::Tempo => BlockKind::Tempo,
         TokenKind::Music => BlockKind::Music,
         TokenKind::Audio => BlockKind::Audio,
+        TokenKind::Lyric => BlockKind::Lyric,
         TokenKind::Visual => BlockKind::Visual,
         TokenKind::Orchestrate => BlockKind::Orchestrate,
         TokenKind::Directing => BlockKind::Directing,
@@ -875,6 +992,7 @@ fn recover_top_level(tokens: &[Token], index: &mut usize) {
                 | TokenKind::Tempo
                 | TokenKind::Music
                 | TokenKind::Audio
+                | TokenKind::Lyric
                 | TokenKind::Visual
                 | TokenKind::Orchestrate
                 | TokenKind::Directing
@@ -893,6 +1011,32 @@ mod tests {
     fn accepts_hash_comments_only() {
         assert!(parse("# note\ntimeline { act intro : 0..8 }").diagnostics.is_empty());
         assert!(!parse("// note\ntimeline { act intro : 0..8 }").diagnostics.is_empty());
+    }
+
+    #[test]
+    fn parses_inline_lyric_block() {
+        let result = parse(
+            r#"lyric for main {
+  lang "zh-Hans"
+  line {
+    word "残" 0s..0.4s
+    word "响" 0.4s..0.8s
+  }
+}"#,
+        );
+        assert!(result.diagnostics.is_empty(), "{:?}", result.diagnostics);
+        let Declaration::Block(block) = &result.script.declarations[0] else {
+            panic!("expected block");
+        };
+        assert_eq!(block.target.as_deref(), Some("main"));
+        let BlockContent::Lyric(lyric) = &block.content else {
+            panic!("expected lyric content");
+        };
+        assert_eq!(lyric.lang.as_deref(), Some("zh-Hans"));
+        assert_eq!(lyric.lines.len(), 1);
+        assert_eq!(lyric.lines[0].words.len(), 2);
+        assert_eq!(lyric.lines[0].words[0].text, "残");
+        assert_eq!(lyric.lines[0].words[0].range, "0s..0.4s");
     }
 
     #[test]
