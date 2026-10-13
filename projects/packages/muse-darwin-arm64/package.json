@@ -1,6 +1,6 @@
 {
     "name": "@muse-gpt/muse-darwin-arm64",
-    "version": "0.0.2",
+    "version": "0.0.3",
     "description": "Prebuilt muse-napi addon for macOS arm64 (optional dependency of @muse-gpt/muse)",
     "license": "MPL-2.0",
     "main": "./index.js",
