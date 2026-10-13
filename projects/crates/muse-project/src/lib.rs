@@ -64,12 +64,25 @@ pub fn manifest_path(project: &Path) -> Result<std::path::PathBuf> {
 }
 
 /// 读取并校验工程清单，确保入口和产物 id 在工程内唯一且路径不为空。
+///
+/// `muse.von` is **true VON** (oak-von). Parsing it as TOML is a contract bug.
+/// Legacy `muse.toml` remains TOML-only during migration.
 pub fn load_manifest(project: &Path) -> Result<ProjectManifest> {
     let path = manifest_path(project)?;
-    let manifest: ProjectManifest = toml::from_str(
-        &fs::read_to_string(&path).with_context(|| format!("cannot read {}", path.display()))?,
-    )
-    .with_context(|| format!("invalid project manifest {}", path.display()))?;
+    let raw =
+        fs::read_to_string(&path).with_context(|| format!("cannot read {}", path.display()))?;
+    let manifest: ProjectManifest = if path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .is_some_and(|n| n.eq_ignore_ascii_case("muse.von"))
+    {
+        oak_von::from_str(&raw).map_err(|err| {
+            anyhow::anyhow!("invalid VON project manifest {}: {err}", path.display())
+        })?
+    } else {
+        toml::from_str(&raw)
+            .with_context(|| format!("invalid TOML project manifest {}", path.display()))?
+    };
     validate_manifest(&manifest)?;
     Ok(manifest)
 }
@@ -105,23 +118,26 @@ pub fn init(path: &Path) -> Result<()> {
     fs::create_dir_all(path.join("library"))?;
     fs::write(
         path.join("muse.von"),
-        r#"[project]
-id = "muse-project"
-version = "0.1.0"
-
-[render]
-width = 1920
-height = 1080
-frame_rate = 24
-
-[[entries]]
-id = "main"
-source = "assets/scenes/main.muse"
-
-[[entries.outputs]]
-id = "preview"
-kind = "preview"
-path = "library/main/preview"
+        r#"{
+  project: {
+    id: "muse-project"
+    version: "0.1.0"
+  }
+  render: {
+    width: 1920
+    height: 1080
+    frame_rate: 24
+  }
+  entries: [
+    {
+      id: "main"
+      source: "assets/scenes/main.muse"
+      outputs: [
+        { id: "preview", kind: "preview", path: "library/main/preview" }
+      ]
+    }
+  ]
+}
 "#,
     )?;
     fs::write(path.join("assets").join("scenes").join("main.muse"), SAMPLE)?;
@@ -259,30 +275,39 @@ mod tests {
 
     #[test]
     fn validates_multiple_outputs() {
-        let m: ProjectManifest = toml::from_str("[project]\nid='p'\nversion='0.1'\n[[entries]]\nid='e'\nsource='e.muse'\n[[entries.outputs]]\nid='a'\nkind='audio'\npath='a.wav'\n").unwrap();
+        let m: ProjectManifest = oak_von::from_str(
+            r#"{
+  project: { id: "p", version: "0.1" }
+  entries: [
+    {
+      id: "e"
+      source: "e.muse"
+      outputs: [ { id: "a", kind: "audio", path: "a.wav" } ]
+    }
+  ]
+}"#,
+        )
+        .unwrap();
         validate_manifest(&m).unwrap();
     }
 
     #[test]
     fn merges_entry_and_output_render_overrides() {
-        let m: ProjectManifest = toml::from_str(
-            r#"[project]
-id = "p"
-version = "0.1"
-[render]
-width = 1920
-height = 1080
-frame_rate = 24
-[[entries]]
-id = "vertical"
-source = "v.muse"
-render = { width = 1080, height = 1920 }
-[[entries.outputs]]
-id = "video"
-kind = "video"
-path = "out.mp4"
-render = { frame_rate = 30 }
-"#,
+        let m: ProjectManifest = oak_von::from_str(
+            r#"{
+  project: { id: "p", version: "0.1" }
+  render: { width: 1920, height: 1080, frame_rate: 24 }
+  entries: [
+    {
+      id: "vertical"
+      source: "v.muse"
+      render: { width: 1080, height: 1920 }
+      outputs: [
+        { id: "video", kind: "video", path: "out.mp4", render: { frame_rate: 30 } }
+      ]
+    }
+  ]
+}"#,
         )
         .unwrap();
         validate_manifest(&m).unwrap();
@@ -292,6 +317,30 @@ render = { frame_rate = 30 }
         assert_eq!(settings.width, 1080);
         assert_eq!(settings.height, 1920);
         assert_eq!(settings.frame_rate, 30);
+    }
+
+    #[test]
+    fn rejects_toml_shaped_muse_von() {
+        let stamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let root = env::temp_dir().join(format!("muse-project-toml-von-{stamp}"));
+        fs::create_dir_all(&root).unwrap();
+        fs::write(
+            root.join("muse.von"),
+            r#"[project]
+id = "p"
+version = "0.1"
+[[entries]]
+id = "e"
+source = "e.muse"
+"#,
+        )
+        .unwrap();
+        let err = load_manifest(&root).unwrap_err().to_string();
+        assert!(
+            err.contains("invalid VON") || err.to_lowercase().contains("von"),
+            "{err}"
+        );
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]

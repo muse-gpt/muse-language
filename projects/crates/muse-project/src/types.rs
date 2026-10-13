@@ -80,14 +80,66 @@ pub struct OutputSpec {
     pub render: Option<RenderOverride>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
+/// Output product kind. Serialized as a plain string so oak-von (no enum visitor) can round-trip.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OutputKind {
     Preview,
     Video,
     Audio,
     Score,
     Data,
+}
+
+impl OutputKind {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Preview => "preview",
+            Self::Video => "video",
+            Self::Audio => "audio",
+            Self::Score => "score",
+            Self::Data => "data",
+        }
+    }
+}
+
+impl std::fmt::Display for OutputKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl std::str::FromStr for OutputKind {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.trim() {
+            "preview" => Ok(Self::Preview),
+            "video" => Ok(Self::Video),
+            "audio" => Ok(Self::Audio),
+            "score" => Ok(Self::Score),
+            "data" => Ok(Self::Data),
+            other => Err(format!("unknown output kind `{other}`")),
+        }
+    }
+}
+
+impl Serialize for OutputKind {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for OutputKind {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let raw = String::deserialize(deserializer)?;
+        raw.parse().map_err(serde::de::Error::custom)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

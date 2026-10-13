@@ -229,6 +229,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f079e83a288787bcd14a6aea84cee5c87a67c5a3e660c30f557a3d24761b3527"
 
 [[package]]
+name = "chacha20"
+version = "0.10.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "65c35e4b699c7e15ccbe7ee35c005e4fc0a278d22238a2857e6ce2dadeda1b06"
+dependencies = [
+ "cfg-if",
+ "cpufeatures 0.3.1",
+ "rand_core",
+]
+
+[[package]]
 name = "chrono"
 version = "0.4.45"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -306,6 +317,15 @@ name = "cpufeatures"
 version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "59ed5838eebb26a2bb2e58f6d5b5316989ae9d08bab10e0e6d103e656d1b0280"
+dependencies = [
+ "libc",
+]
+
+[[package]]
+name = "cpufeatures"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5ca28b0ae3115b884660db4118d803791fd6756b6e88f39c0f3f7859060d7566"
 dependencies = [
  "libc",
 ]
@@ -624,6 +644,7 @@ dependencies = [
  "cfg-if",
  "libc",
  "r-efi",
+ "rand_core",
 ]
 
 [[package]]
@@ -1182,6 +1203,7 @@ version = "0.0.1"
 dependencies = [
  "anyhow",
  "muse-types",
+ "oak-von",
  "serde",
  "serde_yaml",
  "sha2",
@@ -1324,6 +1346,57 @@ checksum = "071dfc062690e90b734c0b2273ce72ad0ffa95f0c74596bc250dcfd960262841"
 dependencies = [
  "autocfg",
  "libm",
+]
+
+[[package]]
+name = "oak-core"
+version = "0.0.12"
+source = "git+https://github.com/yggdrasil-language/oak.rs.git?rev=c1ccd4edc36cd8aaacbc3ea5fc3072237778e342#c1ccd4edc36cd8aaacbc3ea5fc3072237778e342"
+dependencies = [
+ "serde",
+ "smallvec",
+ "triomphe",
+ "twox-hash",
+]
+
+[[package]]
+name = "oak-formatter"
+version = "0.0.12"
+source = "git+https://github.com/yggdrasil-language/oak.rs.git?rev=c1ccd4edc36cd8aaacbc3ea5fc3072237778e342#c1ccd4edc36cd8aaacbc3ea5fc3072237778e342"
+dependencies = [
+ "oak-core",
+]
+
+[[package]]
+name = "oak-macros"
+version = "0.0.12"
+source = "git+https://github.com/yggdrasil-language/oak.rs.git?rev=c1ccd4edc36cd8aaacbc3ea5fc3072237778e342#c1ccd4edc36cd8aaacbc3ea5fc3072237778e342"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
+name = "oak-pretty-print"
+version = "0.0.12"
+source = "git+https://github.com/yggdrasil-language/oak.rs.git?rev=c1ccd4edc36cd8aaacbc3ea5fc3072237778e342#c1ccd4edc36cd8aaacbc3ea5fc3072237778e342"
+dependencies = [
+ "oak-core",
+ "oak-macros",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "oak-von"
+version = "0.0.12"
+source = "git+https://github.com/yggdrasil-language/oak.rs.git?rev=c1ccd4edc36cd8aaacbc3ea5fc3072237778e342#c1ccd4edc36cd8aaacbc3ea5fc3072237778e342"
+dependencies = [
+ "oak-core",
+ "oak-formatter",
+ "oak-pretty-print",
+ "serde",
 ]
 
 [[package]]
@@ -1522,6 +1595,23 @@ name = "r-efi"
 version = "6.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf"
+
+[[package]]
+name = "rand"
+version = "0.10.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "65c9fb96cbc91e3478eaae79a69fcd3f1ae4ad052e471fe6732fff548984b4af"
+dependencies = [
+ "chacha20",
+ "getrandom",
+ "rand_core",
+]
+
+[[package]]
+name = "rand_core"
+version = "0.10.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "63b8176103e19a2643978565ca18b50549f6101881c443590420e4dc998a3c69"
 
 [[package]]
 name = "range-alloc"
@@ -1841,7 +1931,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a7507d819769d01a365ab707794a4084392c824f54a7a6a7862f8c3d0892b283"
 dependencies = [
  "cfg-if",
- "cpufeatures",
+ "cpufeatures 0.2.17",
  "digest",
 ]
 
@@ -2268,10 +2358,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "triomphe"
+version = "0.1.17"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0d15f4f5898bcfc5d8a8e45ed30b2f108d710c1a2e5489dbf80e078f707181bc"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "ttf-parser"
 version = "0.25.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d2df906b07856748fa3f6e0ad0cbaa047052d4a7dd609e231c4f72cee8c36f31"
+
+[[package]]
+name = "twox-hash"
+version = "2.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "86a801b3cea342a06d468c8710662aa29e5e05e4f5c0d62f00bbb7f2ad7941c2"
+dependencies = [
+ "rand",
+]
 
 [[package]]
 name = "typenum"

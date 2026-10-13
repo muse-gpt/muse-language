@@ -6,6 +6,7 @@ license.workspace = true
 [dependencies]
 anyhow.workspace = true
 muse-types = { path = "../muse-types" }
+oak-von.workspace = true
 serde.workspace = true
 serde_yaml.workspace = true
 sha2.workspace = true
