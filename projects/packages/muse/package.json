@@ -1,7 +1,7 @@
-{
+﻿{
     "name": "@muse-gpt/muse",
     "version": "0.0.1",
-    "description": "Deterministic audiovisual composition language - muse CLI and Node helpers",
+    "description": "Deterministic audiovisual composition language — TS CLI composing muse-napi primitives",
     "type": "module",
     "license": "MPL-2.0",
     "bin": {

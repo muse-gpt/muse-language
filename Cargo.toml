@@ -1,7 +1,7 @@
 [workspace]
 resolver = "2"
 members = ["projects/crates/*"]
-default-members = ["projects/crates/muse-tools"]
+default-members = ["projects/crates/muse-napi"]
 
 [workspace.package]
 version = "0.0.1"
@@ -47,6 +47,10 @@ muse-music = { path = "projects/crates/muse-music" }
 muse-score = { path = "projects/crates/muse-score" }
 muse-media = { path = "projects/crates/muse-media" }
 muse-mcp = { path = "projects/crates/muse-mcp" }
+muse-napi = { path = "projects/crates/muse-napi" }
+napi = { version = "3", default-features = true, features = ["napi4", "serde-json"] }
+napi-derive = "3"
+napi-build = "2"
 
 [profile.release]
 lto = true

@@ -3,19 +3,19 @@
 const { existsSync } = require("node:fs");
 const { join } = require("node:path");
 
-/** Absolute path to the native `muse` binary shipped in this package. */
-const bin = join(__dirname, "lib", "muse");
+const addon = join(__dirname, "lib", "muse_napi.node");
+const pkg = require("./package.json");
 
-/**
- * Resolve the native binary path, or throw if the file is missing from the install.
- * `@muse-gpt/muse` should call this (or read `bin`) instead of inventing paths.
- */
-function resolve() {
-    if (!existsSync(bin)) {
-        throw new Error(`@muse-gpt/muse-linux-arm64: native binary missing at ${bin}`);
+function resolveAddon() {
+    if (!existsSync(addon)) {
+        throw new Error(pkg.name + ": muse-napi addon missing at " + addon);
     }
-    return bin;
+    return addon;
 }
 
-module.exports = { bin, resolve };
-module.exports.default = bin;
+function resolve() {
+    return resolveAddon();
+}
+
+module.exports = { addon, resolveAddon, resolve };
+module.exports.default = addon;

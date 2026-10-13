@@ -2,8 +2,9 @@
     "private": true,
     "packageManager": "pnpm@9.15.0",
     "scripts": {
-        "build": "cargo build --release",
-        "test": "cargo test --release",
+        "build": "cargo build --release -p muse-napi",
+        "build:addon": "cargo build --release -p muse-napi && node scripts/copy-napi-addon.mjs",
+        "test": "cargo test --release --workspace",
         "typecheck": "pnpm --filter @muse-gpt/muse typecheck",
         "dev": "pnpm --filter @muse-gpt/homepage dev",
         "build:homepage": "pnpm --filter @muse-gpt/homepage build",

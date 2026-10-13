@@ -3,7 +3,7 @@
  *
  * Contract: file=publish-npm.yml env=NPM_PUBLISH repo=muse-gpt/muse-language
  *
- * Native artifacts are Rust `muse` CLI binaries (not Node-API .node files).
+ * Native artifacts are muse-napi Node-API addons (`muse_napi.node`).
  */
 
 import { spawnSync } from "node:child_process";
@@ -20,31 +20,31 @@ const NATIVE_PLATFORMS = [
         short: "win32-x64",
         os: ["win32"],
         cpu: ["x64"],
-        fileName: "muse.exe",
+        fileName: "muse_napi.node",
     },
     {
         short: "linux-x64",
         os: ["linux"],
         cpu: ["x64"],
-        fileName: "muse",
+        fileName: "muse_napi.node",
     },
     {
         short: "linux-arm64",
         os: ["linux"],
         cpu: ["arm64"],
-        fileName: "muse",
+        fileName: "muse_napi.node",
     },
     {
         short: "darwin-x64",
         os: ["darwin"],
         cpu: ["x64"],
-        fileName: "muse",
+        fileName: "muse_napi.node",
     },
     {
         short: "darwin-arm64",
         os: ["darwin"],
         cpu: ["arm64"],
-        fileName: "muse",
+        fileName: "muse_napi.node",
     },
 ];
 
@@ -231,7 +231,7 @@ function publishNative(version, artifactsRoot) {
             version,
             description:
                 rawPkg.description ??
-                `Prebuilt Muse CLI binary for ${plat.short} (optional dependency of @muse-gpt/muse)`,
+                `Prebuilt muse-napi addon for ${plat.short} (optional dependency of @muse-gpt/muse)`,
             license: "MPL-2.0",
             main: "./index.js",
             exports: { ".": "./index.js" },
@@ -246,7 +246,7 @@ function publishNative(version, artifactsRoot) {
                 url: REPO_URL,
                 directory: `projects/packages/muse-${plat.short}`,
             },
-            keywords: rawPkg.keywords ?? ["muse", "native", "cli"],
+            keywords: rawPkg.keywords ?? ["muse", "native", "napi"],
         });
         const outcome = npmPublish(stage, name, version);
         if (outcome === "published") published += 1;

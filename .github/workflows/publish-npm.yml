@@ -52,19 +52,19 @@ jobs:
         include:
           - os: windows-latest
             short: win32-x64
-            exe: muse.exe
+            lib: muse_napi.dll
           - os: ubuntu-latest
             short: linux-x64
-            exe: muse
+            lib: libmuse_napi.so
           - os: ubuntu-24.04-arm
             short: linux-arm64
-            exe: muse
+            lib: libmuse_napi.so
           - os: macos-15-intel
             short: darwin-x64
-            exe: muse
+            lib: libmuse_napi.dylib
           - os: macos-latest
             short: darwin-arm64
-            exe: muse
+            lib: libmuse_napi.dylib
     steps:
       - uses: actions/checkout@v7
         with:
@@ -89,8 +89,8 @@ jobs:
           shared-key: publish-native-${{ matrix.short }}
           cache-on-failure: true
 
-      - name: Build muse CLI
-        run: cargo build --release -p muse-tools
+      - name: Build muse-napi
+        run: cargo build --release -p muse-napi
 
       - name: Stage native artifact
         shell: bash
@@ -98,9 +98,9 @@ jobs:
           set -euo pipefail
           out="dist/${{ matrix.short }}"
           mkdir -p "$out"
-          src="target/release/${{ matrix.exe }}"
+          src="target/release/${{ matrix.lib }}"
           test -f "$src"
-          cp "$src" "$out/${{ matrix.exe }}"
+          cp "$src" "$out/muse_napi.node"
           ls -la "$out"
 
       - uses: actions/upload-artifact@v7

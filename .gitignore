@@ -36,3 +36,11 @@ projects/packages/homepage/.vmz/
 # Staged native CLI binaries (CI / local stage)
 projects/packages/muse-*/lib/muse
 projects/packages/muse-*/lib/muse.exe
+
+# napi addon build products
+target/**/muse_napi.node
+projects/packages/muse-*/lib/muse_napi.node
+projects/packages/muse-*/lib/*.dll
+projects/packages/muse-*/lib/*.so
+projects/packages/muse-*/lib/*.dylib
+

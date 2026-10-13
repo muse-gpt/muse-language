@@ -1,0 +1,25 @@
+[package]
+name = "muse-napi"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Orthogonal Node-API primitives for Muse (not a CLI command surface)"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+anyhow.workspace = true
+image.workspace = true
+muse-ir.workspace = true
+muse-media.workspace = true
+muse-parser.workspace = true
+muse-project.workspace = true
+muse-types.workspace = true
+napi = { version = "3", default-features = true, features = ["napi4", "serde-json"] }
+napi-derive = "3"
+serde.workspace = true
+serde_json.workspace = true
+
+[build-dependencies]
+napi-build = "2"

@@ -1,7 +1,7 @@
-{
+﻿{
     "name": "@muse-gpt/muse-darwin-arm64",
     "version": "0.0.1",
-    "description": "Prebuilt Muse CLI binary for macOS arm64 (optional dependency of @muse-gpt/muse)",
+    "description": "Prebuilt muse-napi addon for macOS arm64 (optional dependency of @muse-gpt/muse)",
     "license": "MPL-2.0",
     "main": "./index.js",
     "exports": {
@@ -18,5 +18,5 @@
         "url": "git+https://github.com/muse-gpt/muse-language.git",
         "directory": "projects/packages/muse-darwin-arm64"
     },
-    "keywords": ["muse", "native", "macos", "cli"]
+    "keywords": ["muse", "native", "macos", "napi"]
 }
