@@ -134,9 +134,11 @@ fn probe_media_foundation() -> (bool, String) {
         .unwrap_or(0);
     let tmp = env::temp_dir().join(format!("muse-mf-probe-{stamp}.mp4"));
     let attempt = (|| -> Result<(), media_types::Error> {
-        let mut encoder = Encoder::open(&tmp, 16, 16, 1, 2_000_000, 44_100, false)?;
-        // One black 16x16 NV12 frame (Y plane then interleaved UV).
-        let nv12 = vec![0u8; 16 * 16 + 16 * 8];
+        // 64×64: the smallest size Media Foundation reliably negotiates
+        // (16×16 is rejected by `SetInputMediaType`).
+        let mut encoder = Encoder::open(&tmp, 64, 64, 1, 2_000_000, 44_100, false)?;
+        // One black 64x64 NV12 frame (Y plane then interleaved UV).
+        let nv12 = vec![0u8; 64 * 64 + 64 * 32];
         encoder.write_video(&nv12, 0, 1)?;
         encoder.finish()
     })();
