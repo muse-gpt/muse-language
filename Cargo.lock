@@ -636,6 +636,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "geometry-types"
+version = "0.0.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "getrandom"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1024,6 +1031,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "media-codec"
+version = "0.0.0"
+dependencies = [
+ "media-image",
+ "media-types",
+ "windows",
+]
+
+[[package]]
+name = "media-image"
+version = "0.0.0"
+dependencies = [
+ "geometry-types",
+ "serde",
+]
+
+[[package]]
+name = "media-types"
+version = "0.0.0"
+
+[[package]]
 name = "memchr"
 version = "2.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1139,13 +1167,14 @@ dependencies = [
  "ab_glyph",
  "anyhow",
  "bytemuck",
- "hound",
  "image",
+ "media-codec",
+ "media-image",
+ "media-types",
  "muse-ir",
  "muse-types",
  "pollster",
  "serde",
- "serde_json",
  "wgpu",
 ]
 
@@ -1170,7 +1199,7 @@ name = "muse-napi"
 version = "0.0.1"
 dependencies = [
  "anyhow",
- "image",
+ "media-codec",
  "muse-ir",
  "muse-mcp",
  "muse-media",

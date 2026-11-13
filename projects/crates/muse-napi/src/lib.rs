@@ -4,8 +4,10 @@
 //! Compose those in `@muse-gpt/muse` (TypeScript) from these functions.
 #![deny(clippy::all)]
 
-use std::{collections::HashMap, path::PathBuf};
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 
+use media_codec::MediaLibrary;
 use muse_ir::{Compilation, CompileOptions, RenderPlan, compilation_schema, compile_with};
 use muse_media::{
     ComposeOptions, MixedAudioSource, Mp4Options, compose_frame, find_ffmpeg, mix_plan_audio,
@@ -22,6 +24,9 @@ use napi::bindgen_prelude::*;
 use napi_derive::napi;
 use serde::Serialize;
 use serde_json::Value;
+
+/// Monotonic suffix for per-frame PNG transport files in the temp directory.
+static PNG_SEQ: AtomicU64 = AtomicU64::new(0);
 
 fn to_napi_err(err: impl std::fmt::Display) -> Error {
     Error::from_reason(err.to_string())
@@ -181,8 +186,14 @@ pub fn find_ffmpeg_path() -> Result<Option<String>> {
     }
 }
 
+/// Availability of both MP4 encode paths (selected path, Media Foundation, ffmpeg).
+#[napi]
+pub fn mp4_encoder_status() -> Result<Value> {
+    json_value(&muse_media::mp4_encoder_status())
+}
+
 /// Compose one RGB frame from a plan JSON at normalized time `t` in `[0, 1]`.
-/// Returns PNG bytes.
+/// Returns PNG bytes encoded by the shared host codec.
 #[napi]
 pub fn compose_frame_png(
     plan: Value,
@@ -195,14 +206,15 @@ pub fn compose_frame_png(
     let options = ComposeOptions {
         asset_root: PathBuf::from(asset_root.unwrap_or_else(|| ".".into())),
     };
-    let mut cache = HashMap::new();
-    let image = compose_frame(&plan, width, height, t as f32, &options, &mut cache)
+    let mut media = MediaLibrary::new();
+    let frame = compose_frame(&plan, width, height, t as f32, &options, &mut media)
         .map_err(to_napi_err)?;
-    let mut png = Vec::new();
-    let mut cursor = std::io::Cursor::new(&mut png);
-    image
-        .write_to(&mut cursor, image::ImageFormat::Png)
-        .map_err(to_napi_err)?;
+    // The codec writes PNG to a path; the buffer handoff stays a transport step.
+    let stamp = PNG_SEQ.fetch_add(1, Ordering::Relaxed);
+    let tmp = std::env::temp_dir().join(format!("muse-frame-{}-{stamp}.png", std::process::id()));
+    media_codec::write_png(&tmp, frame.width, frame.height, &frame.pixels).map_err(to_napi_err)?;
+    let png = std::fs::read(&tmp).map_err(to_napi_err)?;
+    let _ = std::fs::remove_file(&tmp);
     Ok(Buffer::from(png))
 }
 
@@ -293,7 +305,8 @@ pub struct EncodeMp4Options {
     pub max_duration_seconds: Option<f64>,
 }
 
-/// Encode a plan to MP4 via GPU/CPU compose + ffmpeg (encode only).
+/// Encode a plan to MP4 via GPU/CPU compose + the selected encode path
+/// (`MUSE_MP4_ENCODER=mf|ffmpeg`; Media Foundation by default on Windows).
 #[napi]
 pub fn encode_plan_mp4(plan: Value, out_path: String, options: Option<EncodeMp4Options>) -> Result<()> {
     let plan: RenderPlan = serde_json::from_value(plan).map_err(to_napi_err)?;

@@ -50,9 +50,23 @@ function runDoctor(options: ParsedOptions): number {
             ok: Boolean(ffmpeg),
             message: ffmpeg ?? "ffmpeg not found on PATH (optional for encode)",
         });
+        const mp4 = native.mp4EncoderStatus();
+        checks.push({
+            id: "mp4-encoder",
+            ok: mp4.selected === "ffmpeg" ? mp4.ffmpeg_available : mp4.media_foundation_available,
+            message: [
+                `selected ${mp4.selected}`,
+                `Media Foundation ${mp4.media_foundation_available ? "ready" : "unavailable"}`,
+                `ffmpeg ${mp4.ffmpeg_available ? "found" : "missing"}`,
+                mp4.message,
+            ]
+                .filter((part) => part.length > 0)
+                .join(" — "),
+        });
     }
 
-    const ok = checks.every((c) => c.ok || c.id === "ffmpeg");
+    // Encode-path availability is reported, not gated (preview and audio work without either).
+    const ok = checks.every((c) => c.ok || c.id === "ffmpeg" || c.id === "mp4-encoder");
     const json = options.json === true;
     if (json) {
         console.log(JSON.stringify({ ok, checks }, null, 2));

@@ -68,6 +68,13 @@ export type MuseNative = {
         message: string;
     };
     findFfmpegPath(): string | null;
+    /** Availability of both MP4 encode paths (selected, Media Foundation, ffmpeg). */
+    mp4EncoderStatus(): {
+        selected: string;
+        media_foundation_available: boolean;
+        ffmpeg_available: boolean;
+        message: string;
+    };
     composeFramePng(
         plan: unknown,
         width: number,

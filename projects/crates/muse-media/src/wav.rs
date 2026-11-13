@@ -1,8 +1,11 @@
-//! PCM WAV helpers: placeholder tone and bound-track mix (doc 16).
+//! PCM WAV helpers: placeholder tone and bound-track mix, written and decoded
+//! through the shared host codec (stereo PCM16 output, explicit sample rate).
 use anyhow::{Context, Result, bail};
-use hound::{SampleFormat, WavReader, WavSpec, WavWriter};
+use media_codec::MediaLibrary;
 use muse_ir::RenderPlan;
 use std::{fs, path::Path};
+
+use crate::compose::DECODE_LIMITS;
 
 /// Development placeholder: fixed 440 Hz tone. Prefer [`mix_plan_audio`] when tracks exist.
 pub fn write_wav(path: &Path, seconds: f64, rate: u32) -> Result<()> {
@@ -10,21 +13,22 @@ pub fn write_wav(path: &Path, seconds: f64, rate: u32) -> Result<()> {
 }
 
 pub fn write_placeholder_tone_wav(path: &Path, seconds: f64, rate: u32) -> Result<()> {
+    let samples = placeholder_pcm_stereo(seconds, rate);
+    write_stereo_i16(path, &samples, rate)
+}
+
+/// Stereo PCM16 placeholder tone samples (440 Hz) for in-memory muxing.
+pub(crate) fn placeholder_pcm_stereo(seconds: f64, rate: u32) -> Vec<i16> {
     let count = (seconds.max(0.0) * rate as f64).round() as u32;
-    let spec = WavSpec {
-        channels: 1,
-        sample_rate: rate,
-        bits_per_sample: 16,
-        sample_format: SampleFormat::Int,
-    };
-    let mut writer = WavWriter::create(path, spec).with_context(|| format!("create {}", path.display()))?;
+    let mut samples = Vec::with_capacity(count as usize * 2);
     for index in 0..count {
         let sample =
             ((index as f64 * 440.0 * std::f64::consts::TAU / rate as f64).sin() * 1600.0) as i16;
-        writer.write_sample(sample)?;
+        // The shared codec writes interleaved stereo; the mono tone is widened.
+        samples.push(sample);
+        samples.push(sample);
     }
-    writer.finalize()?;
-    Ok(())
+    samples
 }
 
 /// Mix result metadata for manifests.
@@ -52,13 +56,14 @@ pub fn mix_plan_audio(
     }
     let sample_count = (seconds * rate as f64).round().max(0.0) as usize;
     let mut mix = vec![0.0f64; sample_count];
+    let mut media = MediaLibrary::new();
 
     for track in &plan.audio_tracks {
         let path = resolve_uri(asset_root, &track.uri);
         if !path.is_file() {
             bail!("audio track `{}` missing file {}", track.id, path.display());
         }
-        let samples = read_mono_f64(&path, rate)?;
+        let samples = read_mono_f64(&mut media, &path, rate)?;
         let file_start = (track.file_start.max(0.0) * rate as f64).round() as usize;
         let file_end = track
             .file_end
@@ -91,7 +96,7 @@ pub fn mix_plan_audio(
         }
     }
 
-    write_mono_f64(out, rate, &mix)?;
+    write_stereo_from_f64(out, rate, &mix)?;
     Ok(MixedAudioSource::Tracks)
 }
 
@@ -104,75 +109,42 @@ fn resolve_uri(asset_root: &Path, uri: &str) -> std::path::PathBuf {
     }
 }
 
-fn read_mono_f64(path: &Path, target_rate: u32) -> Result<Vec<f64>> {
-    let mut reader = WavReader::open(path).with_context(|| format!("open {}", path.display()))?;
-    let spec = reader.spec();
-    let channels = spec.channels.max(1) as usize;
-    let mut mono = Vec::new();
-    match spec.sample_format {
-        SampleFormat::Int => {
-            let max = (1i64 << (spec.bits_per_sample.saturating_sub(1).max(1))) as f64;
-            let mut frame = Vec::with_capacity(channels);
-            for sample in reader.samples::<i32>() {
-                let s = sample? as f64 / max;
-                frame.push(s);
-                if frame.len() == channels {
-                    mono.push(frame.iter().sum::<f64>() / channels as f64);
-                    frame.clear();
-                }
-            }
-        }
-        SampleFormat::Float => {
-            let mut frame = Vec::with_capacity(channels);
-            for sample in reader.samples::<f32>() {
-                let s = sample? as f64;
-                frame.push(s);
-                if frame.len() == channels {
-                    mono.push(frame.iter().sum::<f64>() / channels as f64);
-                    frame.clear();
-                }
-            }
-        }
-    }
-    if spec.sample_rate == target_rate || mono.is_empty() {
-        return Ok(mono);
-    }
-    Ok(resample_linear(&mono, spec.sample_rate, target_rate))
+/// Decode one audio file to mono f64 at the plan rate.
+///
+/// The rate is an explicit input contract of the host decoder (it resamples
+/// while decoding), so no private resampler sits between import and mix.
+fn read_mono_f64(media: &mut MediaLibrary, path: &Path, target_rate: u32) -> Result<Vec<f64>> {
+    let frames = media
+        .audio_pcm(&path.to_string_lossy(), target_rate, DECODE_LIMITS)
+        .with_context(|| format!("open {}", path.display()))?;
+    Ok(frames
+        .iter()
+        .map(|[left, right]| (f64::from(*left) + f64::from(*right)) / 2.0)
+        .collect())
 }
 
-fn resample_linear(input: &[f64], from: u32, to: u32) -> Vec<f64> {
-    if from == 0 || to == 0 || input.is_empty() {
-        return input.to_vec();
-    }
-    let out_len = ((input.len() as f64) * f64::from(to) / f64::from(from)).round() as usize;
-    let mut out = Vec::with_capacity(out_len);
-    for i in 0..out_len {
-        let src = i as f64 * f64::from(from) / f64::from(to);
-        let i0 = src.floor() as usize;
-        let i1 = (i0 + 1).min(input.len() - 1);
-        let frac = src - i0 as f64;
-        out.push(input[i0] * (1.0 - frac) + input[i1] * frac);
-    }
-    out
-}
-
-fn write_mono_f64(path: &Path, rate: u32, samples: &[f64]) -> Result<()> {
+fn write_stereo_i16(path: &Path, samples: &[i16], rate: u32) -> Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    let spec = WavSpec {
-        channels: 1,
-        sample_rate: rate,
-        bits_per_sample: 16,
-        sample_format: SampleFormat::Int,
-    };
-    let mut writer = WavWriter::create(path, spec).with_context(|| format!("create {}", path.display()))?;
-    for &s in samples {
-        let clamped = (s * 32767.0).clamp(-32768.0, 32767.0) as i16;
-        writer.write_sample(clamped)?;
-    }
-    writer.finalize()?;
+    let raw = path
+        .to_str()
+        .with_context(|| format!("path is not valid UTF-8: {}", path.display()))?;
+    media_codec::write_wav(raw, samples, rate)
+        .with_context(|| format!("create {}", path.display()))?;
     Ok(())
+}
+
+/// Quantize the mono f64 mix to interleaved stereo PCM16 (same scale and
+/// clamp as the historical writer, with the channels widened).
+fn write_stereo_from_f64(path: &Path, rate: u32, samples: &[f64]) -> Result<()> {
+    let mut interleaved = Vec::with_capacity(samples.len() * 2);
+    for &sample in samples {
+        let clamped = (sample * 32767.0).clamp(-32768.0, 32767.0) as i16;
+        interleaved.push(clamped);
+        interleaved.push(clamped);
+    }
+    write_stereo_i16(path, &interleaved, rate)
 }
 
 #[cfg(test)]
@@ -181,6 +153,51 @@ mod tests {
     use muse_ir::{AudioRole, AudioSourceKind, AudioTrack, TimeMap};
     use std::env;
 
+    #[test]
+    fn placeholder_tone_writes_stereo_pcm16_with_declared_rate() {
+        let dir = env::temp_dir().join(format!("muse-tone-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("tone.wav");
+        write_placeholder_tone_wav(&path, 0.01, 44_100).unwrap();
+        let bytes = fs::read(&path).unwrap();
+        let wav = media_codec::parse_wav_pcm16(&bytes).expect("pcm16 decodes");
+        assert_eq!(wav.sample_rate, 44_100);
+        assert_eq!(wav.frames.len(), (0.01_f64 * 44_100.0).round() as usize);
+        for frame in &wav.frames {
+            assert_eq!(frame[0], frame[1], "mono tone widens to identical stereo");
+        }
+        // Same tone formula as the historical writer: index 1 carries the first
+        // non-zero sample at the declared rate.
+        let expected =
+            ((1.0 * 440.0 * std::f64::consts::TAU / 44_100.0).sin() * 1600.0) as i16;
+        assert!(wav.frames[1][0].abs() > 0.0);
+        assert!((wav.frames[1][0] - f32::from(expected) / 32768.0).abs() < 1e-6);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn missing_bound_track_is_an_explicit_error() {
+        let dir = env::temp_dir().join(format!("muse-mix-missing-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let mut settings = muse_ir::compile(
+            "timeline { act main : 0s..1s } tempo { bpm 120 }",
+            Default::default(),
+        )
+        .plan
+        .expect("plan")
+        .settings;
+        settings.sample_rate = 48_000;
+        let plan = plan_with_track(settings, "absent.wav");
+        let error = mix_plan_audio(&plan, &dir.join("out.wav"), 0.25, &dir)
+            .expect_err("missing file must fail");
+        assert!(
+            error.to_string().contains("audio track `master` missing file"),
+            "{error}"
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(windows)]
     #[test]
     fn mixes_bound_track_without_placeholder() {
         let dir = env::temp_dir().join(format!("muse-mix-{}", std::process::id()));
@@ -197,7 +214,16 @@ mod tests {
         .settings;
         settings.sample_rate = 48_000;
 
-        let plan = RenderPlan {
+        let plan = plan_with_track(settings, "bed.wav");
+        let out = dir.join("out.wav");
+        let kind = mix_plan_audio(&plan, &out, 0.25, &dir).unwrap();
+        assert_eq!(kind, MixedAudioSource::Tracks);
+        assert!(out.is_file());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    fn plan_with_track(settings: muse_types::RenderSettings, uri: &str) -> RenderPlan {
+        RenderPlan {
             settings,
             duration_seconds: 0.25,
             time_map: TimeMap::new(120.0, 4),
@@ -208,7 +234,7 @@ mod tests {
             audio_tracks: vec![AudioTrack {
                 id: "master".into(),
                 role: AudioRole::Song,
-                uri: "bed.wav".into(),
+                uri: uri.into(),
                 file_start: 0.0,
                 file_end: Some(0.25),
                 timeline_offset: 0.0,
@@ -225,11 +251,6 @@ mod tests {
             intents: vec![],
             orchestration: vec![],
             prefab_instances: vec![],
-        };
-        let out = dir.join("out.wav");
-        let kind = mix_plan_audio(&plan, &out, 0.25, &dir).unwrap();
-        assert_eq!(kind, MixedAudioSource::Tracks);
-        assert!(out.is_file());
-        let _ = fs::remove_dir_all(&dir);
+        }
     }
 }

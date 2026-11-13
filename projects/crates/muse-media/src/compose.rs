@@ -1,14 +1,20 @@
 //! Deterministic frame composition from a [`RenderPlan`].
 use anyhow::{Context, Result, bail};
 use image::{Rgb, RgbImage, imageops};
+use media_codec::{DecodeLimits, MediaLibrary};
+use media_image::{Bitmap, Frame};
 use muse_ir::{RenderPlan, ShotTransition};
 use std::{
-    collections::HashMap,
     path::{Path, PathBuf},
     sync::OnceLock,
 };
 
 use crate::gpu::{CompositorPreference, compositor_preference};
+
+/// Decode budget handed to the host codec. The project layer owns the limits;
+/// `unbounded` trusts the container's declared size, matching the historical
+/// Muse behaviour (no invented budget).
+pub(crate) const DECODE_LIMITS: DecodeLimits = DecodeLimits::unbounded();
 
 #[derive(Debug, Clone)]
 pub struct ComposeOptions {
@@ -53,6 +59,8 @@ fn parse_hex_color(raw: &str) -> Option<(u8, u8, u8)> {
 
 /// Paint one frame at normalized time `t` in `[0, 1]` across the plan duration.
 ///
+/// Returns an RGBA8 [`Frame`] from the shared image storage; `media` is the
+/// per-render decode cache (host codec import with [`DECODE_LIMITS`]).
 /// Prefers the GPU compositor when available (`MUSE_COMPOSITOR=auto|gpu`).
 /// Forced GPU (`MUSE_COMPOSITOR=gpu`) fails explicitly if the backend cannot init.
 /// Incoming shot `xfade` / `flash` / `iris` / `slices` blend previous and current looks when active.
@@ -62,11 +70,24 @@ pub fn compose_frame(
     height: u32,
     t: f32,
     options: &ComposeOptions,
-    cache: &mut HashMap<String, RgbImage>,
+    media: &mut MediaLibrary,
+) -> Result<Frame> {
+    Ok(frame_from_rgb(&compose_frame_rgb(
+        plan, width, height, t, options, media,
+    )?))
+}
+
+fn compose_frame_rgb(
+    plan: &RenderPlan,
+    width: u32,
+    height: u32,
+    t: f32,
+    options: &ComposeOptions,
+    media: &mut MediaLibrary,
 ) -> Result<RgbImage> {
     if let Some(tr) = plan.transition_at_normalized(t) {
-        let from = compose_frame_plain(plan, width, height, tr.from_t, options, cache)?;
-        let to = compose_frame_plain(plan, width, height, t, options, cache)?;
+        let from = compose_frame_plain(plan, width, height, tr.from_t, options, media)?;
+        let to = compose_frame_plain(plan, width, height, t, options, media)?;
         let mut blended = match tr.kind {
             ShotTransition::Iris => iris_blend_rgb(&from, &to, tr.mix),
             ShotTransition::Slices => slices_blend_rgb(&from, &to, tr.mix),
@@ -77,7 +98,36 @@ pub fn compose_frame(
         }
         return Ok(blended);
     }
-    compose_frame_plain(plan, width, height, t, options, cache)
+    compose_frame_plain(plan, width, height, t, options, media)
+}
+
+/// Wrap an RGB canvas into shared RGBA8 storage with full opacity.
+fn frame_from_rgb(image: &RgbImage) -> Frame {
+    let mut frame = Frame::new(image.width(), image.height());
+    for (index, pixel) in image.pixels().enumerate() {
+        let base = index * 4;
+        frame.pixels[base] = pixel[0];
+        frame.pixels[base + 1] = pixel[1];
+        frame.pixels[base + 2] = pixel[2];
+        frame.pixels[base + 3] = 255;
+    }
+    frame
+}
+
+/// Drop the alpha channel of a decoded [`Bitmap`] for the RGB operator pipeline.
+fn rgb_from_bitmap(bitmap: &Bitmap) -> RgbImage {
+    let mut out = RgbImage::new(bitmap.width, bitmap.height);
+    for y in 0..bitmap.height {
+        for x in 0..bitmap.width {
+            let base = ((y * bitmap.width + x) as usize) * 4;
+            out.put_pixel(
+                x,
+                y,
+                Rgb([bitmap.rgba[base], bitmap.rgba[base + 1], bitmap.rgba[base + 2]]),
+            );
+        }
+    }
+    out
 }
 
 fn compose_frame_plain(
@@ -86,17 +136,17 @@ fn compose_frame_plain(
     height: u32,
     t: f32,
     options: &ComposeOptions,
-    cache: &mut HashMap<String, RgbImage>,
+    media: &mut MediaLibrary,
 ) -> Result<RgbImage> {
     match compositor_preference() {
-        CompositorPreference::Cpu => compose_frame_cpu(plan, width, height, t, options, cache),
+        CompositorPreference::Cpu => compose_frame_cpu(plan, width, height, t, options, media),
         CompositorPreference::Gpu => {
             compose_frame_gpu(plan, width, height, t, options)
                 .context("GPU compositor required (MUSE_COMPOSITOR=gpu)")
         }
         CompositorPreference::Auto => match compose_frame_gpu(plan, width, height, t, options) {
             Ok(image) => Ok(image),
-            Err(_) => compose_frame_cpu(plan, width, height, t, options, cache),
+            Err(_) => compose_frame_cpu(plan, width, height, t, options, media),
         },
     }
 }
@@ -192,7 +242,7 @@ fn compose_frame_cpu(
     height: u32,
     t: f32,
     options: &ComposeOptions,
-    cache: &mut HashMap<String, RgbImage>,
+    media: &mut MediaLibrary,
 ) -> Result<RgbImage> {
     let layers = plan.visuals_at_normalized(t);
     let (r, g, b) = layers_background_rgb(&layers);
@@ -202,7 +252,7 @@ fn compose_frame_cpu(
         .flat_map(|layer| layer.images.iter().map(String::as_str))
         .collect();
     for uri in images {
-        let plate = load_image(uri, options, cache)?;
+        let plate = load_image(uri, options, media)?;
         blit_cover(&mut canvas, &plate);
     }
     if let Some((name, mix)) = layers_lut(&layers) {
@@ -306,17 +356,13 @@ fn paint_progress_cue(canvas: &mut RgbImage, t: f32) {
 fn load_image(
     uri: &str,
     options: &ComposeOptions,
-    cache: &mut HashMap<String, RgbImage>,
+    media: &mut MediaLibrary,
 ) -> Result<RgbImage> {
-    if let Some(hit) = cache.get(uri) {
-        return Ok(hit.clone());
-    }
     let path = resolve_asset(uri, &options.asset_root);
-    let image = image::open(&path)
-        .with_context(|| format!("cannot open visual image `{}` ({})", uri, path.display()))?
-        .to_rgb8();
-    cache.insert(uri.to_owned(), image.clone());
-    Ok(image)
+    let bitmap = media
+        .image(&path.to_string_lossy(), DECODE_LIMITS)
+        .with_context(|| format!("cannot open visual image `{}` ({})", uri, path.display()))?;
+    Ok(rgb_from_bitmap(&bitmap))
 }
 
 fn resolve_asset(uri: &str, root: &Path) -> PathBuf {
@@ -649,12 +695,91 @@ pub fn plan_has_images(plan: &RenderPlan) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{lyric_card_opacity, lyric_card_ports};
+    use super::{ComposeOptions, compose_frame, lyric_card_opacity, lyric_card_ports};
+    use image::{Rgb, RgbImage};
+    use media_codec::MediaLibrary;
     use muse_ir::{
         AudioSourceKind, PrefabInstance, RenderPlan, TimeMap,
     };
     use muse_types::RenderSettings;
     use std::collections::BTreeMap;
+
+    #[test]
+    fn composes_background_frame_with_full_alpha_cpu() {
+        // Exact RGB asserts use the CPU path (GPU sRGB clear can round differently).
+        unsafe {
+            std::env::set_var("MUSE_COMPOSITOR", "cpu");
+        }
+        let plan = muse_ir::compile(
+            r##"timeline { act main : 0..1 } visual for main { background color "#0b1524" }"##,
+            Default::default(),
+        )
+        .plan
+        .expect("valid plan");
+        let mut media = MediaLibrary::new();
+        let frame =
+            compose_frame(&plan, 32, 24, 0.0, &ComposeOptions::default(), &mut media).unwrap();
+        assert_eq!(&frame.pixels[0..4], &[0x0b, 0x15, 0x24, 255]);
+        // PNG round-trip through the shared codec decodes back to the same pixels.
+        let dir = std::env::temp_dir().join(format!("muse-media-frame-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let png = dir.join("frame.png");
+        media_codec::write_png(&png, frame.width, frame.height, &frame.pixels).unwrap();
+        let decoded = image::open(&png).unwrap().to_rgb8();
+        assert_eq!(*decoded.get_pixel(0, 0), Rgb([0x0b, 0x15, 0x24]));
+        let _ = std::fs::remove_dir_all(&dir);
+        unsafe {
+            std::env::remove_var("MUSE_COMPOSITOR");
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn composes_image_layer_and_rejects_missing_asset_explicitly() {
+        unsafe {
+            std::env::set_var("MUSE_COMPOSITOR", "cpu");
+        }
+        let dir = std::env::temp_dir().join(format!("muse-media-image-{}", std::process::id()));
+        let textures = dir.join("assets/textures");
+        std::fs::create_dir_all(&textures).unwrap();
+        let mut plate = RgbImage::new(32, 32);
+        for pixel in plate.pixels_mut() {
+            *pixel = Rgb([255, 0, 0]);
+        }
+        plate.save(textures.join("plate.png")).unwrap();
+
+        let plan = muse_ir::compile(
+            r##"timeline { act main : 0..1 } visual for main { background color "#0b1524" image "assets/textures/plate.png" }"##,
+            Default::default(),
+        )
+        .plan
+        .expect("valid plan");
+        let options = ComposeOptions {
+            asset_root: dir.clone(),
+        };
+        let mut media = MediaLibrary::new();
+        let frame = compose_frame(&plan, 16, 16, 0.0, &options, &mut media).unwrap();
+        assert_eq!(&frame.pixels[0..4], &[255, 0, 0, 255]);
+
+        // Missing asset: explicit error naming the uri and the resolved path.
+        let missing = muse_ir::compile(
+            r##"timeline { act main : 0..1 } visual for main { image "assets/textures/absent.png" }"##,
+            Default::default(),
+        )
+        .plan
+        .expect("valid plan");
+        let error = match compose_frame(&missing, 16, 16, 0.0, &options, &mut MediaLibrary::new()) {
+            Ok(_) => panic!("missing asset must fail"),
+            Err(error) => error,
+        };
+        let message = error.to_string();
+        assert!(message.contains("cannot open visual image"), "{message}");
+        assert!(message.contains("assets/textures/absent.png"), "{message}");
+        let _ = std::fs::remove_dir_all(&dir);
+        unsafe {
+            std::env::remove_var("MUSE_COMPOSITOR");
+        }
+    }
 
     fn empty_plan(instances: Vec<PrefabInstance>) -> RenderPlan {
         RenderPlan {

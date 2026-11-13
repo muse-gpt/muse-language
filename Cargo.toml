@@ -49,6 +49,13 @@ muse-score = { path = "projects/crates/muse-score" }
 muse-media = { path = "projects/crates/muse-media" }
 muse-mcp = { path = "projects/crates/muse-mcp" }
 muse-napi = { path = "projects/crates/muse-napi" }
+# Shared neutral media tree (https://github.com/muse-gpt/ucf.rs.git). Local
+# development resolves the leaves by path; CI fetches the same revision into
+# the sibling directory. The formal rev pin lands with the release gate:
+# media-image/media-codec/media-types = rev 2acf43ecc2cdb628e0e8e11bd79636bffa5db043
+media-image = { path = "../media.rs/projects/media/media.image" }
+media-codec = { path = "../media.rs/projects/media/media.codec" }
+media-types = { path = "../media.rs/projects/media/media.types" }
 napi = { version = "3", default-features = true, features = ["napi4", "serde-json"] }
 napi-derive = "3"
 napi-build = "2"

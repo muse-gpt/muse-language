@@ -11,12 +11,13 @@ gpu = ["dep:wgpu", "dep:pollster", "dep:bytemuck"]
 [dependencies]
 anyhow.workspace = true
 ab_glyph.workspace = true
-hound.workspace = true
 image.workspace = true
+media-image.workspace = true
+media-codec.workspace = true
+media-types.workspace = true
 muse-ir = { path = "../muse-ir" }
 muse-types = { path = "../muse-types" }
 serde.workspace = true
-serde_json.workspace = true
 wgpu = { workspace = true, optional = true }
 pollster = { workspace = true, optional = true }
 bytemuck = { workspace = true, optional = true }

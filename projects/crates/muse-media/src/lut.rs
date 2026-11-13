@@ -16,10 +16,13 @@ pub fn resolve_lut(name: &str, asset_root: &Path) -> Result<RgbaImage> {
         } else {
             asset_root.join(trimmed)
         };
-        let img = image::open(&path)
-            .with_context(|| format!("cannot open lut `{}` ({})", trimmed, path.display()))?
-            .to_rgba8();
-        return Ok(resample_to_strip(&img));
+        let mut media = media_codec::MediaLibrary::new();
+        let bitmap = media
+            .image(&path.to_string_lossy(), crate::compose::DECODE_LIMITS)
+            .with_context(|| format!("cannot open lut `{}` ({})", trimmed, path.display()))?;
+        let strip = RgbaImage::from_raw(bitmap.width, bitmap.height, bitmap.rgba.to_vec())
+            .with_context(|| format!("lut `{}` decoded to an unusable buffer", trimmed))?;
+        return Ok(resample_to_strip(&strip));
     }
     builtin_gradmap(trimmed)
 }

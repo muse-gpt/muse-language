@@ -10,7 +10,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 anyhow.workspace = true
-image.workspace = true
+media-codec.workspace = true
 muse-ir.workspace = true
 muse-mcp.workspace = true
 muse-media.workspace = true
