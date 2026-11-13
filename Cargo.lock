@@ -1059,6 +1059,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "media-audio"
+version = "0.0.0"
+dependencies = [
+ "media-codec",
+ "media-dsp",
+ "media-synthesis",
+ "media-types",
+]
+
+[[package]]
 name = "media-codec"
 version = "0.0.0"
 dependencies = [
@@ -1066,6 +1076,10 @@ dependencies = [
  "media-types",
  "windows",
 ]
+
+[[package]]
+name = "media-dsp"
+version = "0.0.0"
 
 [[package]]
 name = "media-image"
@@ -1105,6 +1119,15 @@ dependencies = [
  "geometry",
  "media-image",
  "media-types",
+]
+
+[[package]]
+name = "media-synthesis"
+version = "0.0.0"
+dependencies = [
+ "media-dsp",
+ "media-types",
+ "serde",
 ]
 
 [[package]]
@@ -1239,6 +1262,7 @@ dependencies = [
  "bytemuck",
  "geometry-types",
  "image",
+ "media-audio",
  "media-codec",
  "media-image",
  "media-post",

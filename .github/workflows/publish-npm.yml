@@ -89,7 +89,7 @@ jobs:
         run: |
           set -euo pipefail
           git clone --no-checkout https://github.com/muse-gpt/ucf.rs.git ../media.rs
-          git -C ../media.rs checkout e10b407d855dd77664a20de10d848cf3c87f6e84
+          git -C ../media.rs checkout 59afb7d53ae4a3caff91d1db59a287f054cf9b33
 
       - uses: Swatinem/rust-cache@v2
         with:

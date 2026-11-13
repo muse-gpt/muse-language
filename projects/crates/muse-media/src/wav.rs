@@ -40,8 +40,10 @@ pub enum MixedAudioSource {
 
 /// Write plan audio for wall-clock window `[0, seconds)`.
 ///
-/// Uses bound tracks when present; otherwise writes the placeholder tone.
-/// Does not invent score synthesis here (orthogonal: composeScore is separate).
+/// 归属裁决（G7-W4）：混音语义归 `media.audio::build_audio`（stereo、帧基
+/// `TimeBase`、fade 字段、required 合同槽）。本函数只做 Muse 工程语义的
+/// lowering：秒→帧换算、uri→路径解析与「绑定轨缺失是工程合同错误」的
+/// 显式前置检查（轨道 id 只有 Muse 语言层知道）。
 pub fn mix_plan_audio(
     plan: &RenderPlan,
     out: &Path,
@@ -49,54 +51,50 @@ pub fn mix_plan_audio(
     asset_root: &Path,
 ) -> Result<MixedAudioSource> {
     let rate = plan.settings.sample_rate.max(1);
+    let fps = plan.settings.frame_rate.max(1);
     let seconds = seconds.max(0.0);
     if plan.audio_tracks.is_empty() {
         write_placeholder_tone_wav(out, seconds, rate)?;
         return Ok(MixedAudioSource::PlaceholderTone);
     }
-    let sample_count = (seconds * rate as f64).round().max(0.0) as usize;
-    let mut mix = vec![0.0f64; sample_count];
-    let mut media = MediaLibrary::new();
-
+    let duration_frames = (seconds * fps as f64).round().max(0.0) as u32;
+    let mut clips = Vec::with_capacity(plan.audio_tracks.len());
     for track in &plan.audio_tracks {
         let path = resolve_uri(asset_root, &track.uri);
         if !path.is_file() {
             bail!("audio track `{}` missing file {}", track.id, path.display());
         }
-        let samples = read_mono_f64(&mut media, &path, rate)?;
-        let file_start = (track.file_start.max(0.0) * rate as f64).round() as usize;
-        let file_end = track
+        let to_frames = |t: f64| (t.max(0.0) * fps as f64).round() as u32;
+        let duration_frames = track
             .file_end
-            .map(|t| (t.max(0.0) * rate as f64).round() as usize)
-            .unwrap_or(samples.len())
-            .min(samples.len());
-        if file_end <= file_start {
-            continue;
-        }
-        let clip = &samples[file_start..file_end];
-        let timeline_start = (track.timeline_offset.max(0.0) * rate as f64).round() as isize;
-        let fade_in = (track.fade_in.max(0.0) * rate as f64).round() as usize;
-        let fade_out = (track.fade_out.max(0.0) * rate as f64).round() as usize;
-        let gain = track.gain_linear;
-
-        for (i, &s) in clip.iter().enumerate() {
-            let out_i = timeline_start + i as isize;
-            if out_i < 0 || out_i as usize >= sample_count {
-                continue;
-            }
-            let mut g = gain;
-            if fade_in > 0 && i < fade_in {
-                g *= i as f64 / fade_in as f64;
-            }
-            let from_end = clip.len().saturating_sub(1).saturating_sub(i);
-            if fade_out > 0 && from_end < fade_out {
-                g *= (from_end + 1) as f64 / fade_out as f64;
-            }
-            mix[out_i as usize] += s * g;
-        }
+            .map(|end| to_frames((end - track.file_start).max(0.0)))
+            .filter(|d| *d > 0);
+        clips.push(media_audio::ClipPlacement {
+            src: path.to_string_lossy().into_owned(),
+            at_frames: to_frames(track.timeline_offset),
+            duration_frames,
+            offset_frames: to_frames(track.file_start),
+            volume: track.gain_linear as f32,
+            fade_in_frames: to_frames(track.fade_in),
+            fade_out_frames: to_frames(track.fade_out),
+            // Muse 绑定轨是工程声明合同：解码失败必须显式报错。
+            required: true,
+        });
     }
-
-    write_stereo_from_f64(out, rate, &mix)?;
+    let audio_plan = media_audio::AudioPlan {
+        sample_rate: rate,
+        channels: 2,
+        time_base: media_types::TimeBase::from_fps(fps),
+        duration_frames,
+        bgm: None,
+        narration: None,
+        sfx: Vec::new(),
+        clips,
+    };
+    let mut media = MediaLibrary::new();
+    let samples = media_audio::build_audio(&audio_plan, &mut media, DECODE_LIMITS)
+        .with_context(|| "media.audio mix failed")?;
+    write_stereo_i16(out, &samples, rate)?;
     Ok(MixedAudioSource::Tracks)
 }
 
@@ -109,20 +107,6 @@ fn resolve_uri(asset_root: &Path, uri: &str) -> std::path::PathBuf {
     }
 }
 
-/// Decode one audio file to mono f64 at the plan rate.
-///
-/// The rate is an explicit input contract of the host decoder (it resamples
-/// while decoding), so no private resampler sits between import and mix.
-fn read_mono_f64(media: &mut MediaLibrary, path: &Path, target_rate: u32) -> Result<Vec<f64>> {
-    let frames = media
-        .audio_pcm(&path.to_string_lossy(), target_rate, DECODE_LIMITS)
-        .with_context(|| format!("open {}", path.display()))?;
-    Ok(frames
-        .iter()
-        .map(|[left, right]| (f64::from(*left) + f64::from(*right)) / 2.0)
-        .collect())
-}
-
 fn write_stereo_i16(path: &Path, samples: &[i16], rate: u32) -> Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
@@ -133,18 +117,6 @@ fn write_stereo_i16(path: &Path, samples: &[i16], rate: u32) -> Result<()> {
     media_codec::write_wav(raw, samples, rate)
         .with_context(|| format!("create {}", path.display()))?;
     Ok(())
-}
-
-/// Quantize the mono f64 mix to interleaved stereo PCM16 (same scale and
-/// clamp as the historical writer, with the channels widened).
-fn write_stereo_from_f64(path: &Path, rate: u32, samples: &[f64]) -> Result<()> {
-    let mut interleaved = Vec::with_capacity(samples.len() * 2);
-    for &sample in samples {
-        let clamped = (sample * 32767.0).clamp(-32768.0, 32767.0) as i16;
-        interleaved.push(clamped);
-        interleaved.push(clamped);
-    }
-    write_stereo_i16(path, &interleaved, rate)
 }
 
 #[cfg(test)]
@@ -218,7 +190,22 @@ mod tests {
         let out = dir.join("out.wav");
         let kind = mix_plan_audio(&plan, &out, 0.25, &dir).unwrap();
         assert_eq!(kind, MixedAudioSource::Tracks);
-        assert!(out.is_file());
+        // G7-W4 验收：采样数/声道/头与声明窗口一致（帧基 TimeBase 推导），
+        // 绑定轨内容非静音（独立解码回读，不与实现共享 oracle 路径）。
+        let bytes = fs::read(&out).unwrap();
+        let wav = media_codec::parse_wav_pcm16(&bytes).expect("mix output is pcm16");
+        assert_eq!(wav.sample_rate, 48_000);
+        assert_eq!(wav.frames.len(), (0.25_f64 * 48_000_f64).round() as usize);
+        let peak = wav
+            .frames
+            .iter()
+            .flat_map(|f| [f[0], f[1]])
+            .fold(0.0f32, |a, s| a.max(s.abs()));
+        assert!(peak > 0.01, "bound track must not mix to silence, peak {peak}");
+        assert!(
+            wav.frames.iter().all(|f| f[0].is_finite() && f[1].is_finite()),
+            "all samples finite"
+        );
         let _ = fs::remove_dir_all(&dir);
     }
 
