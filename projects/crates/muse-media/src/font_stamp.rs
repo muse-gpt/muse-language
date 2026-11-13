@@ -1,170 +1,130 @@
-//! Rasterize stamp glyph labels and lyric captions with a system CJK-capable font.
+//! Stamp glyph labels and lyric captions rasterized through the shared
+//! `media.text` core.
 //!
-//! Falls back silently when no usable font is found (geometry stamp still draws).
+//! 归属裁决（G7-W3）：字形栅格与 run 绘制归 `media.text`（正式字形所有者）；
+//! Muse 保留工程级字体资源解析（`MUSE_FONT` → 候选清单 → 显式错误）与词级
+//! 时序、高亮选择、本地化 display 的语言语义。无可用字体不再静默跳绘——
+//! 声明了文字 FX 却解析不到字体是显式错误（§11.4 禁静默回落）。
 
-use ab_glyph::{Font, FontArc, PxScale, ScaleFont, point};
-use image::RgbImage;
+use anyhow::{Context, Result, bail};
+use geometry_types::Rgba;
+use media_image::Frame;
+use media_text::{FontId, Fonts};
 use muse_ir::{LyricAlign, LyricLayer, LyricLine, LyricWord};
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
+use std::sync::{Mutex, OnceLock};
+
+/// Process-shared `media.text` font set. Resolution happens once; a failed
+/// resolution is a cached explicit error, never a silent skip.
+fn shared_fonts() -> Result<std::sync::MutexGuard<'static, Fonts>> {
+    static FONTS: OnceLock<Result<Mutex<Fonts>, String>> = OnceLock::new();
+    let slot = FONTS.get_or_init(|| load_project_fonts().map(Mutex::new));
+    match slot {
+        Ok(mutex) => Ok(mutex.lock().expect("muse fonts mutex")),
+        Err(message) => bail!("{message}"),
+    }
+}
+
+/// Resolve font bytes at the project layer and hand them to the shared core.
+fn load_project_fonts() -> Result<Fonts, String> {
+    let bytes = resolve_font_bytes().map_err(|error| error.to_string())?;
+    Fonts::from_bytes(&bytes, &bytes, &bytes)
+        .map_err(|error| format!("muse font bytes rejected by media.text: {error}"))
+}
+
+/// `MUSE_FONT` is an explicit contract: set but unreadable fails. Otherwise
+/// the first readable candidate wins; none found is an explicit error.
+fn resolve_font_bytes() -> Result<Vec<u8>> {
+    if let Ok(explicit) = std::env::var("MUSE_FONT") {
+        let path = Path::new(explicit.trim());
+        if !path.as_os_str().is_empty() {
+            let bytes = std::fs::read(path)
+                .with_context(|| format!("MUSE_FONT `{}` unreadable", path.display()))?;
+            return Ok(bytes);
+        }
+    }
+    for path in candidate_font_paths() {
+        if let Ok(bytes) = std::fs::read(&path) {
+            return Ok(bytes);
+        }
+    }
+    bail!("no CJK-capable font found (set MUSE_FONT to a TTF/OTF/TTC path)");
+}
 
 /// Draw `label` centered with slam scale/opacity driven by shot progress.
 pub fn draw_stamp_label(
-    canvas: &mut RgbImage,
+    canvas: &mut Frame,
     label: &str,
     strength: f32,
     shot_progress: f32,
-) {
+) -> Result<()> {
     let label = label.trim();
     if label.is_empty() {
-        return;
+        return Ok(());
     }
     let strength = strength.clamp(0.0, 1.0);
     if strength <= 0.0 {
-        return;
+        return Ok(());
     }
-    let Some(font) = system_font() else {
-        return;
-    };
-
     let slam = smoothstep(0.0, 0.22, shot_progress);
     let scale_factor = 2.2 - 1.2 * slam;
-    let opacity = strength * slam * (0.75 + 0.25 * (shot_progress * std::f32::consts::PI).sin().abs());
+    let opacity =
+        strength * slam * (0.75 + 0.25 * (shot_progress * std::f32::consts::PI).sin().abs());
     if opacity <= 0.0 {
-        return;
+        return Ok(());
     }
 
-    let height = canvas.height().max(1) as f32;
+    let height = canvas.height.max(1) as f32;
     let px = (height * 0.42 * scale_factor).clamp(12.0, height * 0.85);
-    let scale = PxScale::from(px);
-    let scaled = font.as_scaled(scale);
-
-    let mut glyphs = Vec::new();
-    let mut caret = 0.0_f32;
-    for ch in label.chars() {
-        let id = font.glyph_id(ch);
-        let glyph = id.with_scale_and_position(scale, point(caret, 0.0));
-        caret += scaled.h_advance(id);
-        glyphs.push(glyph);
+    let mut fonts = shared_fonts()?;
+    let width = fonts.measure(label, px, false, false);
+    if width <= 0.0 {
+        return Ok(());
     }
-    if glyphs.is_empty() || caret <= 0.0 {
-        return;
-    }
-
-    let mut min_x = f32::MAX;
-    let mut min_y = f32::MAX;
-    let mut max_x = f32::MIN;
-    let mut max_y = f32::MIN;
-    for glyph in &glyphs {
-        if let Some(outlined) = font.outline_glyph(glyph.clone()) {
-            let b = outlined.px_bounds();
-            min_x = min_x.min(b.min.x);
-            min_y = min_y.min(b.min.y);
-            max_x = max_x.max(b.max.x);
-            max_y = max_y.max(b.max.y);
-        }
-    }
-    if !min_x.is_finite() {
-        return;
-    }
-
-    let gw = (max_x - min_x).max(1.0);
-    let gh = (max_y - min_y).max(1.0);
-    let origin_x = (canvas.width() as f32 - gw) * 0.5 - min_x;
-    let origin_y = (canvas.height() as f32 - gh) * 0.5 - min_y;
-
-    for glyph in glyphs {
-        let positioned = glyph.id.with_scale_and_position(
-            scale,
-            point(glyph.position.x + origin_x, glyph.position.y + origin_y),
-        );
-        let Some(outlined) = font.outline_glyph(positioned) else {
-            continue;
-        };
-        let bounds = outlined.px_bounds();
-        outlined.draw(|x, y, c| {
-            if c <= 0.0 {
-                return;
-            }
-            let px = bounds.min.x as i32 + x as i32;
-            let py = bounds.min.y as i32 + y as i32;
-            if px < 0 || py < 0 {
-                return;
-            }
-            let (px, py) = (px as u32, py as u32);
-            if px >= canvas.width() || py >= canvas.height() {
-                return;
-            }
-            let cover = (c * opacity).clamp(0.0, 1.0);
-            let p = canvas.get_pixel_mut(px, py);
-            // Warm vermilion fill (P1 accent-ish), not pure white.
-            p[0] = mix_u8(p[0], 255, cover);
-            p[1] = mix_u8(p[1], 120, cover);
-            p[2] = mix_u8(p[2], 72, cover);
-        });
-    }
+    let x = (canvas.width as f32 - width) * 0.5;
+    // Optical centering: baseline below the vertical middle by ~0.36 em.
+    let baseline = height * 0.5 + px * 0.36;
+    let alpha = (opacity * 255.0).round() as u8;
+    fonts.draw_line(canvas, label, x, baseline, px, FontId::Regular, Rgba([255, 120, 72, alpha]));
+    Ok(())
 }
 
-/// Draw the active lyric line near the bottom safe area; highlight the active word.
-///
-/// When `display_text` is set (localized line/phrase), paint that single run instead of
-/// vocal word slices — timing still comes from the vocal line window.
-#[allow(dead_code)] // public helper; compose uses the opacity-aware variant
+/// Same layout as the caption path with an optional localized display
+/// override and LyricCard opacity (`intensity` / focus dimming).
 pub fn draw_lyric_caption(
-    canvas: &mut RgbImage,
-    layer: &LyricLayer,
-    line: &LyricLine,
-    active: Option<&LyricWord>,
-) {
-    draw_lyric_caption_with_display(canvas, layer, line, active, None, 0.95);
-}
-
-/// Same as [`draw_lyric_caption`], with optional localized display override and opacity.
-///
-/// `opacity` is clamped to `[0, 1]` (LyricCard `intensity` / focus dimming).
-pub fn draw_lyric_caption_with_display(
-    canvas: &mut RgbImage,
+    canvas: &mut Frame,
     layer: &LyricLayer,
     line: &LyricLine,
     active: Option<&LyricWord>,
     display_text: Option<&str>,
     opacity: f32,
-) {
+) -> Result<()> {
     if line.words.is_empty() && display_text.is_none_or(|s| s.trim().is_empty()) {
-        return;
+        return Ok(());
     }
     let opacity = opacity.clamp(0.0, 1.0);
     if opacity <= 0.001 {
-        return;
+        return Ok(());
     }
-    let Some(font) = system_font() else {
-        return;
-    };
-    let short = canvas.width().min(canvas.height()).max(1) as f32;
+    let short = (canvas.width.min(canvas.height)).max(1) as f32;
     let margin = (short * layer.safe_margin.clamp(0.0, 0.45) as f32).max(4.0);
     let px = if layer.size_px > 0.0 {
         layer.size_px as f32
     } else {
         (short * 0.055).clamp(14.0, short * 0.12)
     };
-    let scale = PxScale::from(px);
-    let scaled = font.as_scaled(scale);
-    let gap = scaled.h_advance(font.glyph_id(' ')) * 0.35;
+    let alpha = (opacity * 255.0).round() as u8;
+
+    let mut fonts = shared_fonts()?;
+    let gap = fonts.measure(" ", px, false, false) * 0.35;
 
     let mut runs: Vec<(String, [u8; 3], f32)> = Vec::new();
     let mut total_w = 0.0_f32;
     if let Some(text) = display_text.map(str::trim).filter(|s| !s.is_empty()) {
-        let color = if active.is_some() {
-            layer.highlight_color
-        } else {
-            layer.color
-        };
-        let mut caret = 0.0_f32;
-        for ch in text.chars() {
-            caret += scaled.h_advance(font.glyph_id(ch));
-        }
-        total_w = caret;
-        runs.push((text.to_owned(), color, caret));
+        let color = if active.is_some() { layer.highlight_color } else { layer.color };
+        let width = fonts.measure(text, px, false, false);
+        total_w = width;
+        runs.push((text.to_owned(), color, width));
     } else {
         for (idx, word) in line.words.iter().enumerate() {
             let color = if active.is_some_and(|a| a.id == word.id) {
@@ -172,172 +132,48 @@ pub fn draw_lyric_caption_with_display(
             } else {
                 layer.color
             };
-            let mut caret = 0.0_f32;
-            for ch in word.text.chars() {
-                caret += scaled.h_advance(font.glyph_id(ch));
-            }
+            let width = fonts.measure(&word.text, px, false, false);
             if idx > 0 {
                 total_w += gap;
             }
-            total_w += caret;
-            runs.push((word.text.clone(), color, caret));
+            total_w += width;
+            runs.push((word.text.clone(), color, width));
         }
     }
     if total_w <= 0.0 {
-        return;
+        return Ok(());
     }
 
-    let max_w = (canvas.width() as f32 - margin * 2.0).max(8.0);
+    let max_w = (canvas.width as f32 - margin * 2.0).max(8.0);
     let origin_x = match layer.align {
         LyricAlign::Start => margin,
-        LyricAlign::Center => ((canvas.width() as f32 - total_w.min(max_w)) * 0.5).max(margin),
-        LyricAlign::End => (canvas.width() as f32 - margin - total_w.min(max_w)).max(margin),
+        LyricAlign::Center => ((canvas.width as f32 - total_w.min(max_w)) * 0.5).max(margin),
+        LyricAlign::End => (canvas.width as f32 - margin - total_w.min(max_w)).max(margin),
     };
-    let baseline = canvas.height() as f32 - margin - px * 0.25;
+    let baseline = canvas.height as f32 - margin - px * 0.25;
 
     let mut x = origin_x;
     for (text, color, width) in runs {
-        draw_text_run(canvas, font, &text, scale, x, baseline, color, opacity);
+        fonts.draw_line(
+            canvas,
+            &text,
+            x,
+            baseline,
+            px,
+            FontId::Regular,
+            Rgba([color[0], color[1], color[2], alpha]),
+        );
         x += width + gap;
-        if x > canvas.width() as f32 - margin {
+        if x > canvas.width as f32 - margin {
             break;
         }
     }
-}
-
-fn draw_text_run(
-    canvas: &mut RgbImage,
-    font: &FontArc,
-    text: &str,
-    scale: PxScale,
-    origin_x: f32,
-    baseline: f32,
-    color: [u8; 3],
-    opacity: f32,
-) {
-    let scaled = font.as_scaled(scale);
-    let mut caret = 0.0_f32;
-    for ch in text.chars() {
-        let id = font.glyph_id(ch);
-        let glyph = id.with_scale_and_position(scale, point(origin_x + caret, baseline));
-        caret += scaled.h_advance(id);
-        let Some(outlined) = font.outline_glyph(glyph) else {
-            continue;
-        };
-        let bounds = outlined.px_bounds();
-        outlined.draw(|gx, gy, c| {
-            if c <= 0.0 {
-                return;
-            }
-            let px = bounds.min.x as i32 + gx as i32;
-            let py = bounds.min.y as i32 + gy as i32;
-            if px < 0 || py < 0 {
-                return;
-            }
-            let (px, py) = (px as u32, py as u32);
-            if px >= canvas.width() || py >= canvas.height() {
-                return;
-            }
-            let cover = (c * opacity).clamp(0.0, 1.0);
-            let p = canvas.get_pixel_mut(px, py);
-            p[0] = mix_u8(p[0], color[0], cover);
-            p[1] = mix_u8(p[1], color[1], cover);
-            p[2] = mix_u8(p[2], color[2], cover);
-        });
-    }
-}
-
-fn mix_u8(src: u8, dst: u8, t: f32) -> u8 {
-    (src as f32 * (1.0 - t) + dst as f32 * t).round() as u8
+    Ok(())
 }
 
 fn smoothstep(edge0: f32, edge1: f32, x: f32) -> f32 {
     let t = ((x - edge0) / (edge1 - edge0)).clamp(0.0, 1.0);
     t * t * (3.0 - 2.0 * t)
-}
-
-fn system_font() -> Option<&'static FontArc> {
-    static FONT: OnceLock<Option<FontArc>> = OnceLock::new();
-    FONT.get_or_init(|| {
-        if let Ok(explicit) = std::env::var("MUSE_FONT") {
-            if let Some(font) = load_font_file(Path::new(explicit.trim())) {
-                return Some(font);
-            }
-        }
-        for path in candidate_font_paths() {
-            if let Some(font) = load_font_file(&path) {
-                return Some(font);
-            }
-        }
-        None
-    })
-    .as_ref()
-}
-
-fn load_font_file(path: &Path) -> Option<FontArc> {
-    let data = std::fs::read(path).ok()?;
-    FontArc::try_from_vec(data).ok()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use image::Rgb;
-
-    #[test]
-    fn draws_cjk_stamp_when_system_font_available() {
-        let Some(_) = system_font() else {
-            eprintln!("skip: no system CJK font");
-            return;
-        };
-        let mut canvas = RgbImage::from_pixel(128, 72, Rgb([11, 21, 36]));
-        draw_stamp_label(&mut canvas, "残", 0.9, 0.5);
-        let warm = canvas.pixels().any(|p| p[0] > 180 && p[1] < 160 && p[2] < 120);
-        assert!(warm, "expected vermilion stamp pixels from ab_glyph");
-    }
-
-    #[test]
-    fn draws_lyric_highlight_when_system_font_available() {
-        let Some(_) = system_font() else {
-            eprintln!("skip: no system CJK font");
-            return;
-        };
-        let mut canvas = RgbImage::from_pixel(320, 180, Rgb([11, 21, 36]));
-        let line = LyricLine {
-            id: "L1".into(),
-            cue_id: Some("C1".into()),
-            words: vec![
-                LyricWord {
-                    id: "W1".into(),
-                    text: "残".into(),
-                    start: 0.0,
-                    end: 0.5,
-                },
-                LyricWord {
-                    id: "W2".into(),
-                    text: "响".into(),
-                    start: 0.5,
-                    end: 1.0,
-                },
-            ],
-        };
-        let layer = LyricLayer {
-            id: "main_layer".into(),
-            track: "main".into(),
-            role: muse_ir::LyricLayerRole::Foreground,
-            size_px: 36.0,
-            color: [200, 200, 210],
-            highlight_color: [255, 224, 138],
-            align: LyricAlign::Center,
-            safe_margin: 0.08,
-            post_group: Some("none".into()),
-        };
-        draw_lyric_caption(&mut canvas, &layer, &line, Some(&line.words[0]));
-        let warm = canvas
-            .pixels()
-            .any(|p| p[0] > 200 && p[1] > 180 && p[2] < 180);
-        assert!(warm, "expected highlight lyric pixels");
-    }
 }
 
 fn candidate_font_paths() -> Vec<PathBuf> {
@@ -347,7 +183,7 @@ fn candidate_font_paths() -> Vec<PathBuf> {
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from(r"C:\Windows"));
     let fonts = windir.join("Fonts");
-    // Prefer single-font TTF/OTF first — ab_glyph rejects many TTC collections.
+    // Prefer single-font TTF/OTF first — many TTC collections fail to parse.
     for name in [
         "simhei.ttf",
         "SIMHEI.TTF",
@@ -379,4 +215,97 @@ fn candidate_font_paths() -> Vec<PathBuf> {
         paths.push(PathBuf::from(name));
     }
     paths
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use media_image::Frame;
+
+    fn frame_with(fill: [u8; 4], width: u32, height: u32) -> Frame {
+        let mut frame = Frame::new(width, height);
+        for chunk in frame.pixels.chunks_exact_mut(4) {
+            chunk.copy_from_slice(&fill);
+        }
+        frame
+    }
+
+    fn fonts_available() -> bool {
+        resolve_font_bytes().is_ok()
+    }
+
+    #[test]
+    fn draws_cjk_stamp_via_media_text() {
+        if !fonts_available() {
+            eprintln!("skip: no system CJK font");
+            return;
+        }
+        let mut canvas = frame_with([11, 21, 36, 255], 128, 72);
+        draw_stamp_label(&mut canvas, "残", 0.9, 0.5).expect("stamp draws");
+        let warm = canvas
+            .pixels
+            .chunks_exact(4)
+            .any(|p| p[0] > 180 && p[1] < 160 && p[2] < 120);
+        assert!(warm, "expected vermilion stamp pixels from media.text");
+    }
+
+    #[test]
+    fn draws_lyric_highlight_via_media_text() {
+        if !fonts_available() {
+            eprintln!("skip: no system CJK font");
+            return;
+        }
+        let mut canvas = frame_with([11, 21, 36, 255], 320, 180);
+        let line = LyricLine {
+            id: "L1".into(),
+            cue_id: Some("C1".into()),
+            words: vec![
+                LyricWord {
+                    id: "W1".into(),
+                    text: "残".into(),
+                    start: 0.0,
+                    end: 0.5,
+                },
+                LyricWord {
+                    id: "W2".into(),
+                    text: "响".into(),
+                    start: 0.5,
+                    end: 1.0,
+                },
+            ],
+        };
+        let layer = LyricLayer {
+            id: "main_layer".into(),
+            track: "main".into(),
+            role: muse_ir::LyricLayerRole::Foreground,
+            size_px: 36.0,
+            color: [200, 200, 210],
+            highlight_color: [255, 224, 138],
+            align: LyricAlign::Center,
+            safe_margin: 0.08,
+            post_group: Some("none".into()),
+        };
+        draw_lyric_caption(&mut canvas, &layer, &line, Some(&line.words[0]), None, 0.95)
+            .expect("caption draws");
+        let warm = canvas
+            .pixels
+            .chunks_exact(4)
+            .any(|p| p[0] > 200 && p[1] > 180 && p[2] < 180);
+        assert!(warm, "expected highlight lyric pixels");
+    }
+
+    #[test]
+    fn missing_font_is_an_explicit_error_not_a_silent_skip() {
+        // Only meaningful where no candidate font resolves; on dev machines
+        // with CJK fonts this asserts the happy path returns Ok.
+        if fonts_available() {
+            let mut canvas = frame_with([0, 0, 0, 255], 32, 32);
+            assert!(draw_stamp_label(&mut canvas, "字", 1.0, 0.5).is_ok());
+        } else {
+            let mut canvas = frame_with([0, 0, 0, 255], 32, 32);
+            let error = draw_stamp_label(&mut canvas, "字", 1.0, 0.5)
+                .expect_err("declared text without font must fail");
+            assert!(error.to_string().contains("font"), "{error}");
+        }
+    }
 }

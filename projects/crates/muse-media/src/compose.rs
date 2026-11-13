@@ -285,18 +285,15 @@ fn compose_frame_cpu(
     if let Some((strength, label)) = layers_stamp(&layers) {
         SlamStamp::new(strength).apply(&mut frame, progress);
         if let Some(label) = label.as_deref() {
-            canvas = rgb_from_frame(&frame);
-            crate::font_stamp::draw_stamp_label(&mut canvas, label, strength, progress);
-            frame = frame_from_rgb(&canvas);
+            // 字形栅格归 `media.text`（G7-W3），直接画在共享 Frame 上。
+            crate::font_stamp::draw_stamp_label(&mut frame, label, strength, progress)?;
         }
     }
     if let Some(strength) = layers_bloom(&layers) {
         SoftBloom::new(strength).apply(&mut frame);
     }
-    canvas = rgb_from_frame(&frame);
     // Lyrics default to post_group none — draw after bloom (doc 14).
-    paint_lyric_layers(&mut canvas, plan, t);
-    let mut frame = frame_from_rgb(&canvas);
+    paint_lyric_layers(&mut frame, plan, t)?;
     if let Some(strength) = layers_vignette(&layers) {
         Vignette::new(strength).apply(&mut frame);
     }
@@ -341,19 +338,19 @@ fn compose_frame_gpu(
         },
         media,
     )?;
-    let mut canvas = RgbImage::from_fn(width, height, |x, y| {
-        let p = rgba.get_pixel(x, y);
-        Rgb([p[0], p[1], p[2]])
-    });
-    // Geometry stamp stays on GPU; glyph label is CPU-rasterized over the frame.
+    // Geometry FX stay on GPU; glyph labels and lyrics rasterize through
+    // `media.text` over the shared frame (G7-W3).
+    let mut frame = Frame::new(width, height);
+    frame.pixels.copy_from_slice(&rgba.into_raw());
     let progress = plan.shot_progress_normalized(t);
     let layer_refs: Vec<_> = layers.iter().collect();
     if let Some((strength, label)) = layers_stamp(&layer_refs) {
         if let Some(label) = label.as_deref() {
-            crate::font_stamp::draw_stamp_label(&mut canvas, label, strength, progress);
+            crate::font_stamp::draw_stamp_label(&mut frame, label, strength, progress)?;
         }
     }
-    paint_lyric_layers(&mut canvas, plan, t);
+    paint_lyric_layers(&mut frame, plan, t)?;
+    let mut canvas = rgb_from_frame(&frame);
     paint_progress_cue(&mut canvas, t);
     Ok(canvas)
 }
@@ -455,13 +452,13 @@ fn lyric_card_opacity(plan: &RenderPlan, line_cue: Option<&str>) -> f32 {
     opacity.clamp(0.0, 1.0)
 }
 
-fn paint_lyric_layers(canvas: &mut RgbImage, plan: &RenderPlan, t_norm: f32) {
+fn paint_lyric_layers(canvas: &mut Frame, plan: &RenderPlan, t_norm: f32) -> Result<()> {
     if plan.lyric_layers.is_empty() || plan.lyric_tracks.is_empty() {
-        return;
+        return Ok(());
     }
     let duration = plan.duration_seconds;
     if duration <= 0.0 {
-        return;
+        return Ok(());
     }
     let t_sec = f64::from(t_norm.clamp(0.0, 1.0)) * duration;
     for layer in &plan.lyric_layers {
@@ -473,19 +470,16 @@ fn paint_lyric_layers(canvas: &mut RgbImage, plan: &RenderPlan, t_norm: f32) {
         };
         let active = track.active_word_at(t_sec);
         let opacity = lyric_card_opacity(plan, line.cue_id.as_deref());
-        if track.uses_localized_display(line) {
-            let display = track
+        let display = if track.uses_localized_display(line) {
+            track
                 .localized_text_for_line(line)
-                .map(|t| t.text.as_str());
-            crate::font_stamp::draw_lyric_caption_with_display(
-                canvas, layer, line, active, display, opacity,
-            );
+                .map(|t| t.text.as_str())
         } else {
-            crate::font_stamp::draw_lyric_caption_with_display(
-                canvas, layer, line, active, None, opacity,
-            );
-        }
+            None
+        };
+        crate::font_stamp::draw_lyric_caption(canvas, layer, line, active, display, opacity)?;
     }
+    Ok(())
 }
 
 fn layers_background_rgb(layers: &[&muse_ir::VisualLayer]) -> (u8, u8, u8) {
