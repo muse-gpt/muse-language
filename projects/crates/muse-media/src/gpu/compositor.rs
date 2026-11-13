@@ -222,6 +222,7 @@ impl GpuCompositor {
         &self,
         layers: &[VisualLayer],
         options: &GpuComposeOptions,
+        media: &mut media_codec::MediaLibrary,
     ) -> Result<RgbaImage> {
         if options.width == 0 || options.height == 0 {
             bail!("GPU compose size must be non-zero");
@@ -285,15 +286,21 @@ impl GpuCompositor {
             }
             for uri in &layer.images {
                 let path = resolve_asset(uri, &options.asset_root);
-                let img = image::open(&path)
+                // 解码走共享宿主 codec（与 CPU 通路同一导入合同与预算）。
+                let bitmap = media
+                    .image(
+                        &path.to_string_lossy(),
+                        crate::compose::DECODE_LIMITS,
+                    )
                     .with_context(|| {
                         format!(
                             "GPU compose open image `{}` ({})",
                             uri,
                             path.display()
                         )
-                    })?
-                    .to_rgba8();
+                    })?;
+                let img = RgbaImage::from_raw(bitmap.width, bitmap.height, bitmap.rgba.clone())
+                    .with_context(|| format!("decoded image `{uri}` has an unusable buffer"))?;
                 let uv = cover_uv(img.width(), img.height(), options.width, options.height);
                 image_draws.push((img, uv));
             }
@@ -358,8 +365,10 @@ impl GpuCompositor {
             || stamp_strength > 0.0
         {
             let lut_img = match (&lut_name, lut_mix > 0.0) {
-                (Some(name), true) => crate::lut::resolve_lut(name, &options.asset_root)?,
-                _ => crate::lut::resolve_lut("IDENTITY", &options.asset_root)?,
+                (Some(name), true) => crate::lut::grade_map_strip(
+                    &crate::lut::resolve_lut(name, &options.asset_root)?,
+                ),
+                _ => crate::lut::grade_map_strip(&media_post::GradeMap::identity()),
             };
             let lut_tex = self.upload_lut_strip(&lut_img)?;
             let lut_view = lut_tex.create_view(&wgpu::TextureViewDescriptor::default());
@@ -770,10 +779,17 @@ struct VsOut {
     @location(0) uv: vec2<f32>,
 };
 
+// 显示空间噪声的唯一正式哈希：逐运算复现 `media.post::shot_ops::hash21`
+// （中间 fract 形态），保证 CPU 与 GPU 颗粒同源（G7-W2 裁决）。
 fn hash21(p: vec2<f32>) -> f32 {
-    var p3 = fract(vec3<f32>(p.xyx) * 0.1031);
-    p3 += dot(p3, p3.yzx + 33.33);
-    return fract((p3.x + p3.y) * p3.z);
+    var p3x = fract(p.x * 0.1031);
+    var p3y = fract(p.y * 0.1031);
+    var p3z = fract(p.x * 0.1031);
+    let d = p3x * (p3y + 33.33) + p3y * (p3z + 33.33) + p3z * (p3x + 33.33);
+    p3x = fract(p3x + d);
+    p3y = fract(p3y + d);
+    p3z = fract(p3z + d);
+    return fract((p3x + p3y) * p3z);
 }
 
 fn soft_bloom(uv: vec2<f32>) -> vec3<f32> {

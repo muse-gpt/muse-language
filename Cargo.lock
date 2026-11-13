@@ -636,6 +636,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "geometry-motion"
+version = "0.0.0"
+dependencies = [
+ "geometry-types",
+ "serde",
+]
+
+[[package]]
 name = "geometry-types"
 version = "0.0.0"
 dependencies = [
@@ -753,6 +761,15 @@ dependencies = [
  "crunchy",
  "num-traits",
  "zerocopy",
+]
+
+[[package]]
+name = "hardware-program"
+version = "0.0.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
 ]
 
 [[package]]
@@ -1048,6 +1065,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "media-particles"
+version = "0.0.0"
+dependencies = [
+ "geometry-types",
+ "media-image",
+ "media-types",
+]
+
+[[package]]
+name = "media-post"
+version = "0.0.0"
+dependencies = [
+ "geometry-motion",
+ "geometry-types",
+ "hardware-program",
+ "media-image",
+ "media-particles",
+ "media-types",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "media-types"
 version = "0.0.0"
 
@@ -1170,6 +1210,7 @@ dependencies = [
  "image",
  "media-codec",
  "media-image",
+ "media-post",
  "media-types",
  "muse-ir",
  "muse-types",

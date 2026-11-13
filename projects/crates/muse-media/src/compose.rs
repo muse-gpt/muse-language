@@ -3,6 +3,10 @@ use anyhow::{Context, Result, bail};
 use image::{Rgb, RgbImage, imageops};
 use media_codec::{DecodeLimits, MediaLibrary};
 use media_image::{Bitmap, Frame};
+use media_post::{
+    EmberPulse, FilmGrain, SoftBloom, Vignette, crossfade, flash, iris_wipe, slices_wipe,
+    SlamStamp,
+};
 use muse_ir::{RenderPlan, ShotTransition};
 use std::{
     path::{Path, PathBuf},
@@ -157,15 +161,17 @@ fn compose_frame_rgb(
     if let Some(tr) = plan.transition_at_normalized(t) {
         let from = compose_frame_plain(plan, width, height, tr.from_t, options, media)?;
         let to = compose_frame_plain(plan, width, height, t, options, media)?;
+        // 转场混合算子归 `media.post`（显示空间，逐值移植自本模块）。
+        let (from_frame, to_frame) = (frame_from_rgb(&from), frame_from_rgb(&to));
         let mut blended = match tr.kind {
-            ShotTransition::Iris => iris_blend_rgb(&from, &to, tr.mix),
-            ShotTransition::Slices => slices_blend_rgb(&from, &to, tr.mix),
-            _ => lerp_rgb(&from, &to, tr.mix),
+            ShotTransition::Iris => iris_wipe(&from_frame, &to_frame, tr.mix),
+            ShotTransition::Slices => slices_wipe(&from_frame, &to_frame, tr.mix),
+            _ => crossfade(&from_frame, &to_frame, tr.mix),
         };
         if tr.flash > 0.0 {
-            apply_flash_rgb(&mut blended, tr.flash);
+            flash(&mut blended, tr.flash);
         }
-        return Ok(blended);
+        return Ok(rgb_from_frame(&blended));
     }
     compose_frame_plain(plan, width, height, t, options, media)
 }
@@ -181,6 +187,19 @@ fn frame_from_rgb(image: &RgbImage) -> Frame {
         frame.pixels[base + 3] = 255;
     }
     frame
+}
+
+/// Drop the alpha channel of a shared [`Frame`] back to the RGB canvas that
+/// host-side painting (glyphs, progress cue) still draws into.
+fn rgb_from_frame(frame: &Frame) -> RgbImage {
+    RgbImage::from_fn(frame.width, frame.height, |x, y| {
+        let base = ((y * frame.width + x) * 4) as usize;
+        Rgb([
+            frame.pixels[base],
+            frame.pixels[base + 1],
+            frame.pixels[base + 2],
+        ])
+    })
 }
 
 /// Drop the alpha channel of a decoded [`Bitmap`] for the RGB operator pipeline.
@@ -213,13 +232,13 @@ fn compose_frame_plain(
             compose_frame_cpu(plan, width, height, t, options, media)
         }
         CompositorPreference::Gpu => {
-            let image = compose_frame_gpu(plan, width, height, t, options)
+            let image = compose_frame_gpu(plan, width, height, t, options, media)
                 .context("GPU compositor required (MUSE_COMPOSITOR=gpu)")?;
             COMPOSE_PATH.record(CompositorKind::Gpu, None);
             Ok(image)
         }
         CompositorPreference::Auto => {
-            match compose_frame_gpu(plan, width, height, t, options) {
+            match compose_frame_gpu(plan, width, height, t, options, media) {
                 Ok(image) => {
                     COMPOSE_PATH.record(CompositorKind::Gpu, None);
                     Ok(image)
@@ -229,91 +248,6 @@ fn compose_frame_plain(
                     compose_frame_cpu(plan, width, height, t, options, media)
                 }
             }
-        }
-    }
-}
-
-fn lerp_rgb(a: &RgbImage, b: &RgbImage, mix: f32) -> RgbImage {
-    let mix = mix.clamp(0.0, 1.0);
-    let width = a.width().min(b.width());
-    let height = a.height().min(b.height());
-    RgbImage::from_fn(width, height, |x, y| {
-        let pa = a.get_pixel(x, y);
-        let pb = b.get_pixel(x, y);
-        Rgb([
-            ((pa[0] as f32 * (1.0 - mix) + pb[0] as f32 * mix).round() as u8),
-            ((pa[1] as f32 * (1.0 - mix) + pb[1] as f32 * mix).round() as u8),
-            ((pa[2] as f32 * (1.0 - mix) + pb[2] as f32 * mix).round() as u8),
-        ])
-    })
-}
-
-/// Circular iris wipe: current look opens from center over previous look.
-fn iris_blend_rgb(from: &RgbImage, to: &RgbImage, mix: f32) -> RgbImage {
-    let mix = mix.clamp(0.0, 1.0);
-    let width = from.width().min(to.width());
-    let height = from.height().min(to.height());
-    let cx = width as f32 * 0.5;
-    let cy = height as f32 * 0.5;
-    let max_r = (cx * cx + cy * cy).sqrt().max(1.0);
-    let open = max_r * (mix * mix * (3.0 - 2.0 * mix));
-    let feather = (max_r * 0.05).max(1.5);
-    RgbImage::from_fn(width, height, |x, y| {
-        let dx = x as f32 + 0.5 - cx;
-        let dy = y as f32 + 0.5 - cy;
-        let d = (dx * dx + dy * dy).sqrt();
-        let t = (1.0
-            - ((d - (open - feather)) / (2.0 * feather)).clamp(0.0, 1.0))
-            .clamp(0.0, 1.0);
-        let mask = t * t * (3.0 - 2.0 * t);
-        let pa = from.get_pixel(x, y);
-        let pb = to.get_pixel(x, y);
-        Rgb([
-            ((pa[0] as f32 * (1.0 - mask) + pb[0] as f32 * mask).round() as u8),
-            ((pa[1] as f32 * (1.0 - mask) + pb[1] as f32 * mask).round() as u8),
-            ((pa[2] as f32 * (1.0 - mask) + pb[2] as f32 * mask).round() as u8),
-        ])
-    })
-}
-
-/// Staggered horizontal slices wipe left→right over previous look.
-fn slices_blend_rgb(from: &RgbImage, to: &RgbImage, mix: f32) -> RgbImage {
-    let mix = mix.clamp(0.0, 1.0);
-    let eased = mix * mix * (3.0 - 2.0 * mix);
-    let width = from.width().min(to.width());
-    let height = from.height().min(to.height());
-    let bands = 8.0_f32;
-    let stagger = 0.45_f32;
-    let span = (1.0 - stagger).max(0.15);
-    let feather = 0.035_f32;
-    RgbImage::from_fn(width, height, |x, y| {
-        let u = (x as f32 + 0.5) / width as f32;
-        let v = (y as f32 + 0.5) / height as f32;
-        let band = (v * bands).floor().clamp(0.0, bands - 1.0);
-        let delay = band / bands * stagger;
-        let local = ((eased - delay) / span).clamp(0.0, 1.0);
-        let edge0 = local - feather;
-        let edge1 = local + feather;
-        let raw = (1.0 - ((u - edge0) / (edge1 - edge0).max(1e-4)).clamp(0.0, 1.0)).clamp(0.0, 1.0);
-        let mask = raw * raw * (3.0 - 2.0 * raw);
-        let pa = from.get_pixel(x, y);
-        let pb = to.get_pixel(x, y);
-        Rgb([
-            ((pa[0] as f32 * (1.0 - mask) + pb[0] as f32 * mask).round() as u8),
-            ((pa[1] as f32 * (1.0 - mask) + pb[1] as f32 * mask).round() as u8),
-            ((pa[2] as f32 * (1.0 - mask) + pb[2] as f32 * mask).round() as u8),
-        ])
-    })
-}
-
-fn apply_flash_rgb(canvas: &mut RgbImage, amount: f32) {
-    let amount = amount.clamp(0.0, 1.0);
-    if amount <= 0.0 {
-        return;
-    }
-    for pixel in canvas.pixels_mut() {
-        for c in 0..3 {
-            pixel[c] = ((pixel[c] as f32 * (1.0 - amount) + 255.0 * amount).round() as u8).min(255);
         }
     }
 }
@@ -337,31 +271,39 @@ fn compose_frame_cpu(
         let plate = load_image(uri, options, media)?;
         blit_cover(&mut canvas, &plate);
     }
+    // 显示空间算子链：语义归 `media.post::shot_ops`（G7-W2 逐值上移），
+    // Muse 只做编排与宿主绘制（字形、进度线）的穿插。
+    let progress = plan.shot_progress_normalized(t);
+    let mut frame = frame_from_rgb(&canvas);
     if let Some((name, mix)) = layers_lut(&layers) {
-        let lut = crate::lut::resolve_lut(&name, &options.asset_root)?;
-        crate::lut::apply_lut_rgb(&mut canvas, &lut, mix);
+        let grade = crate::lut::resolve_lut(&name, &options.asset_root)?;
+        grade.apply(&mut frame, mix);
     }
     if let Some(strength) = layers_pulse(&layers) {
-        apply_pulse_rgb(&mut canvas, strength, plan.shot_progress_normalized(t));
+        EmberPulse::new(strength).apply(&mut frame, progress);
     }
-    let progress = plan.shot_progress_normalized(t);
     if let Some((strength, label)) = layers_stamp(&layers) {
-        apply_stamp_rgb(&mut canvas, strength, progress);
+        SlamStamp::new(strength).apply(&mut frame, progress);
         if let Some(label) = label.as_deref() {
+            canvas = rgb_from_frame(&frame);
             crate::font_stamp::draw_stamp_label(&mut canvas, label, strength, progress);
+            frame = frame_from_rgb(&canvas);
         }
     }
     if let Some(strength) = layers_bloom(&layers) {
-        apply_bloom_rgb(&mut canvas, strength);
+        SoftBloom::new(strength).apply(&mut frame);
     }
+    canvas = rgb_from_frame(&frame);
     // Lyrics default to post_group none — draw after bloom (doc 14).
     paint_lyric_layers(&mut canvas, plan, t);
+    let mut frame = frame_from_rgb(&canvas);
     if let Some(strength) = layers_vignette(&layers) {
-        apply_vignette_rgb(&mut canvas, strength);
+        Vignette::new(strength).apply(&mut frame);
     }
     if let Some(strength) = layers_grain(&layers) {
-        apply_grain_rgb(&mut canvas, strength, t);
+        FilmGrain::new(strength).apply(&mut frame, t);
     }
+    canvas = rgb_from_frame(&frame);
     paint_progress_cue(&mut canvas, t);
     Ok(canvas)
 }
@@ -373,6 +315,7 @@ fn compose_frame_gpu(
     height: u32,
     t: f32,
     options: &ComposeOptions,
+    media: &mut MediaLibrary,
 ) -> Result<RgbImage> {
     use crate::gpu::{GpuComposeOptions, GpuCompositor};
 
@@ -396,6 +339,7 @@ fn compose_frame_gpu(
             time: t,
             shot_progress: plan.shot_progress_normalized(t),
         },
+        media,
     )?;
     let mut canvas = RgbImage::from_fn(width, height, |x, y| {
         let p = rgba.get_pixel(x, y);
@@ -421,6 +365,7 @@ fn compose_frame_gpu(
     _height: u32,
     _t: f32,
     _options: &ComposeOptions,
+    _media: &mut MediaLibrary,
 ) -> Result<RgbImage> {
     bail!("muse-media built without `gpu` feature")
 }
@@ -587,173 +532,6 @@ fn layers_lut(layers: &[&muse_ir::VisualLayer]) -> Option<(String, f32)> {
     })
 }
 
-/// Center ember pulse driven by shot-local progress (shot FX, not lyrics).
-fn apply_pulse_rgb(canvas: &mut RgbImage, strength: f32, shot_progress: f32) {
-    let strength = strength.clamp(0.0, 1.0);
-    if strength <= 0.0 {
-        return;
-    }
-    let envelope = (shot_progress * std::f32::consts::PI).sin().max(0.0);
-    let amp = strength * envelope;
-    if amp <= 0.0 {
-        return;
-    }
-    let width = canvas.width();
-    let height = canvas.height();
-    for y in 0..height {
-        for x in 0..width {
-            let u = (x as f32 + 0.5) / width as f32;
-            let v = (y as f32 + 0.5) / height as f32;
-            let r2 = (u - 0.5).powi(2) + (v - 0.5).powi(2);
-            let glow = (-r2 * 14.0).exp() * amp;
-            let p = canvas.get_pixel_mut(x, y);
-            p[0] = ((p[0] as f32 / 255.0 + glow * 1.0).clamp(0.0, 1.0) * 255.0).round() as u8;
-            p[1] = ((p[1] as f32 / 255.0 + glow * 0.72).clamp(0.0, 1.0) * 255.0).round() as u8;
-            p[2] = ((p[2] as f32 / 255.0 + glow * 0.35).clamp(0.0, 1.0) * 255.0).round() as u8;
-        }
-    }
-}
-
-/// Geometric stamp/slam block under the glyph label (shot FX, not a lyric layer).
-fn apply_stamp_rgb(canvas: &mut RgbImage, strength: f32, shot_progress: f32) {
-    let strength = strength.clamp(0.0, 1.0);
-    if strength <= 0.0 {
-        return;
-    }
-    let slam = smoothstep(0.0, 0.22, shot_progress);
-    let scale = 2.4 - 1.4 * slam;
-    let opacity = strength * slam * (0.75 + 0.25 * (shot_progress * std::f32::consts::PI).sin().abs());
-    if opacity <= 0.0 {
-        return;
-    }
-    let width = canvas.width();
-    let height = canvas.height();
-    let aspect = width as f32 / height as f32;
-    for y in 0..height {
-        for x in 0..width {
-            let u = ((x as f32 + 0.5) / width as f32 - 0.5) * aspect;
-            let v = (y as f32 + 0.5) / height as f32 - 0.5;
-            let px = u * scale;
-            let py = v * scale;
-            let d = px.abs().max(py.abs());
-            let outer = smoothstep(0.22, 0.18, d) * smoothstep(0.12, 0.14, d);
-            let inner = smoothstep(0.10, 0.06, d);
-            let mask = (outer * 0.85 + inner * 0.55).clamp(0.0, 1.0) * opacity;
-            if mask <= 0.0 {
-                continue;
-            }
-            let p = canvas.get_pixel_mut(x, y);
-            p[0] = ((p[0] as f32 / 255.0 * (1.0 - mask) + 0.98 * mask).clamp(0.0, 1.0) * 255.0)
-                .round() as u8;
-            p[1] = ((p[1] as f32 / 255.0 * (1.0 - mask) + 0.82 * mask).clamp(0.0, 1.0) * 255.0)
-                .round() as u8;
-            p[2] = ((p[2] as f32 / 255.0 * (1.0 - mask) + 0.55 * mask).clamp(0.0, 1.0) * 255.0)
-                .round() as u8;
-        }
-    }
-}
-
-fn smoothstep(edge0: f32, edge1: f32, x: f32) -> f32 {
-    let t = ((x - edge0) / (edge1 - edge0)).clamp(0.0, 1.0);
-    t * t * (3.0 - 2.0 * t)
-}
-
-/// Soft highlight bloom matching the GPU 5×5 threshold blur.
-fn apply_bloom_rgb(canvas: &mut RgbImage, strength: f32) {
-    let strength = strength.clamp(0.0, 1.0);
-    if strength <= 0.0 {
-        return;
-    }
-    let width = canvas.width();
-    let height = canvas.height();
-    let src = canvas.clone();
-    let threshold = 0.62_f32;
-    for y in 0..height {
-        for x in 0..width {
-            let mut acc = [0.0_f32; 3];
-            for oy in -2i32..=2 {
-                for ox in -2i32..=2 {
-                    let sx = (x as i32 + ox * 2).clamp(0, width as i32 - 1) as u32;
-                    let sy = (y as i32 + oy * 2).clamp(0, height as i32 - 1) as u32;
-                    let p = src.get_pixel(sx, sy);
-                    for c in 0..3 {
-                        let v = p[c] as f32 / 255.0;
-                        acc[c] += (v - threshold).max(0.0);
-                    }
-                }
-            }
-            let p = canvas.get_pixel_mut(x, y);
-            for c in 0..3 {
-                let add = (acc[c] / 25.0) * strength * 2.5;
-                let v = (p[c] as f32 / 255.0 + add).clamp(0.0, 1.0);
-                p[c] = (v * 255.0).round() as u8;
-            }
-        }
-    }
-}
-
-/// Radial edge darken matching the GPU vignette pass (`smoothstep(0.25, 0.95, d)`).
-fn apply_vignette_rgb(canvas: &mut RgbImage, strength: f32) {
-    let strength = strength.clamp(0.0, 1.0);
-    if strength <= 0.0 {
-        return;
-    }
-    let width = canvas.width();
-    let height = canvas.height();
-    for y in 0..height {
-        for x in 0..width {
-            let u = (x as f32 + 0.5) / width as f32;
-            let v = (y as f32 + 0.5) / height as f32;
-            let d = ((u - 0.5).hypot(v - 0.5)) * std::f32::consts::SQRT_2;
-            let t = ((d - 0.25) / 0.70).clamp(0.0, 1.0);
-            let edge = t * t * (3.0 - 2.0 * t);
-            let factor = 1.0 - strength * edge;
-            let p = canvas.get_pixel_mut(x, y);
-            p[0] = (p[0] as f32 * factor).round() as u8;
-            p[1] = (p[1] as f32 * factor).round() as u8;
-            p[2] = (p[2] as f32 * factor).round() as u8;
-        }
-    }
-}
-
-/// Deterministic film grain matching the GPU post pass.
-fn apply_grain_rgb(canvas: &mut RgbImage, strength: f32, time: f32) {
-    let strength = strength.clamp(0.0, 1.0);
-    if strength <= 0.0 {
-        return;
-    }
-    let time = time.clamp(0.0, 1.0);
-    let width = canvas.width();
-    let height = canvas.height();
-    for y in 0..height {
-        for x in 0..width {
-            let u = (x as f32 + 0.5) / width as f32;
-            let v = (y as f32 + 0.5) / height as f32;
-            let n = hash21(u * 1024.0 + time * 97.0, v * 1024.0 + time * 53.0) * 2.0 - 1.0;
-            let p = canvas.get_pixel_mut(x, y);
-            for c in 0..3 {
-                let v = (p[c] as f32 / 255.0 + n * strength).clamp(0.0, 1.0);
-                p[c] = (v * 255.0).round() as u8;
-            }
-        }
-    }
-}
-
-fn hash21(x: f32, y: f32) -> f32 {
-    let mut p3x = fract(x * 0.1031);
-    let mut p3y = fract(y * 0.1031);
-    let mut p3z = fract(x * 0.1031);
-    let d = p3x * (p3y + 33.33) + p3y * (p3z + 33.33) + p3z * (p3x + 33.33);
-    p3x = fract(p3x + d);
-    p3y = fract(p3y + d);
-    p3z = fract(p3z + d);
-    fract((p3x + p3y) * p3z)
-}
-
-fn fract(v: f32) -> f32 {
-    v - v.floor()
-}
-
 /// Cover-fit `src` onto `dst` (center-cropped), matching Unity/CSS `object-fit: cover`.
 fn blit_cover(dst: &mut RgbImage, src: &RgbImage) {
     let (dw, dh) = (dst.width(), dst.height());
@@ -807,6 +585,38 @@ mod tests {
     };
     use muse_types::RenderSettings;
     use std::collections::BTreeMap;
+
+    fn fnv1a64(bytes: &[u8]) -> u64 {
+        let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+        for byte in bytes {
+            hash ^= u64::from(*byte);
+            hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+        hash
+    }
+
+    /// G7-W2 迁移门 golden：CPU 通路全显示算子（lut/pulse/stamp/bloom/
+    /// vignette/grain + 进度条）单帧整像素 digest。算子逐值上移到
+    /// `media.post` 后本 digest 必须不变（逐值移植、无行为修正）。
+    #[test]
+    fn golden_cpu_frame_all_display_ops() {
+        unsafe {
+            std::env::set_var("MUSE_COMPOSITOR", "cpu");
+        }
+        let plan = muse_ir::compile(
+            r##"timeline { act main : 0..1 } visual for main { background color "#c05030" vignette 0.6 grain 0.25 bloom 0.5 lut P2 0.4 fx pulse 0.7 fx stamp 0.8 }"##,
+            Default::default(),
+        )
+        .plan
+        .expect("valid plan");
+        let mut media = MediaLibrary::new();
+        let frame =
+            compose_frame(&plan, 64, 48, 0.5, &ComposeOptions::default(), &mut media).unwrap();
+        assert_eq!(fnv1a64(&frame.pixels), 7651537512841525761);
+        unsafe {
+            std::env::remove_var("MUSE_COMPOSITOR");
+        }
+    }
 
     #[test]
     fn composes_background_frame_with_full_alpha_cpu() {

@@ -1,11 +1,15 @@
-//! Gradient-map LUTs for post grading (256×1, luma → palette colour).
+//! Gradient-map LUT resolution for Muse scenes.
+//!
+//! 归属裁决（G7-W2）：停点→条带→查表混合的通用语义归 `media.post::GradeMap`；
+//! 本模块只保留 Muse 的创作内容——内置 P1–P5 停点表（品牌主题，不下沉上游）
+//! 与「内置 id 或工程相对 PNG 路径」的解析。
 
 use anyhow::{Context, Result, bail};
-use image::{Rgb, RgbImage, Rgba, RgbaImage};
+use media_post::GradeMap;
 use std::path::Path;
 
-/// Resolve a LUT id (`P2`) or project-relative PNG path into a 256×1 RGBA strip.
-pub fn resolve_lut(name: &str, asset_root: &Path) -> Result<RgbaImage> {
+/// Resolve a LUT id (`P2`) or project-relative PNG path into a 256-entry grade map.
+pub fn resolve_lut(name: &str, asset_root: &Path) -> Result<GradeMap> {
     let trimmed = name.trim();
     if trimmed.is_empty() {
         bail!("lut name must be non-empty");
@@ -20,9 +24,7 @@ pub fn resolve_lut(name: &str, asset_root: &Path) -> Result<RgbaImage> {
         let bitmap = media
             .image(&path.to_string_lossy(), crate::compose::DECODE_LIMITS)
             .with_context(|| format!("cannot open lut `{}` ({})", trimmed, path.display()))?;
-        let strip = RgbaImage::from_raw(bitmap.width, bitmap.height, bitmap.rgba.to_vec())
-            .with_context(|| format!("lut `{}` decoded to an unusable buffer", trimmed))?;
-        return Ok(resample_to_strip(&strip));
+        return Ok(GradeMap::from_strip(&bitmap.rgba, bitmap.width, bitmap.height));
     }
     builtin_gradmap(trimmed)
 }
@@ -34,7 +36,8 @@ fn looks_like_path(name: &str) -> bool {
         || name.starts_with("assets")
 }
 
-fn builtin_gradmap(id: &str) -> Result<RgbaImage> {
+/// 内置渐变色标表（创作内容）：大正/残響/踏切/灯火/食堂。
+fn builtin_gradmap(id: &str) -> Result<GradeMap> {
     let key = id.trim().to_ascii_uppercase().replace('-', "_");
     let stops: &[(f32, [u8; 3])] = match key.as_str() {
         "P1" | "P1_OUMAGATOKI" => &[
@@ -70,99 +73,53 @@ fn builtin_gradmap(id: &str) -> Result<RgbaImage> {
             (0.7, [180, 190, 200]),
             (1.0, [240, 244, 248]),
         ],
-        "IDENTITY" | "NONE" => return Ok(identity_strip()),
+        "IDENTITY" | "NONE" => return Ok(GradeMap::identity()),
         other => bail!("unknown built-in lut `{other}` (use P1–P5 or a .png path)"),
     };
-    Ok(stops_to_strip(stops))
+    Ok(GradeMap::from_stops(stops))
 }
 
-fn identity_strip() -> RgbaImage {
-    let mut img = RgbaImage::new(256, 1);
-    for x in 0..256u32 {
-        let v = x as u8;
-        img.put_pixel(x, 0, Rgba([v, v, v, 255]));
+/// 256 格查找表 → 256×1 RGBA 条带（GPU 纹理上传用）。
+#[must_use]
+pub fn grade_map_strip(map: &GradeMap) -> image::RgbaImage {
+    let mut img = image::RgbaImage::new(256, 1);
+    for (x, entry) in map.table().iter().enumerate() {
+        img.put_pixel(x as u32, 0, image::Rgba([entry[0], entry[1], entry[2], 255]));
     }
     img
 }
 
-fn stops_to_strip(stops: &[(f32, [u8; 3])]) -> RgbaImage {
-    let mut img = RgbaImage::new(256, 1);
-    for x in 0..256u32 {
-        let t = x as f32 / 255.0;
-        let rgb = sample_stops(stops, t);
-        img.put_pixel(x, 0, Rgba([rgb[0], rgb[1], rgb[2], 255]));
-    }
-    img
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-fn sample_stops(stops: &[(f32, [u8; 3])], t: f32) -> [u8; 3] {
-    let t = t.clamp(0.0, 1.0);
-    if stops.is_empty() {
-        return [0, 0, 0];
+    #[test]
+    fn builtin_stops_match_the_creative_tables() {
+        let p2 = builtin_gradmap("P2").unwrap();
+        assert_eq!(p2.table()[0], [11, 21, 36]);
+        assert_eq!(p2.table()[255], [233, 217, 184]);
+        // t=0.6 → 216,84,42 停点：153/255=0.6 精确命中。
+        assert_eq!(p2.table()[153], [216, 84, 42]);
     }
-    if t <= stops[0].0 {
-        return stops[0].1;
-    }
-    for window in stops.windows(2) {
-        let (t0, c0) = window[0];
-        let (t1, c1) = window[1];
-        if t <= t1 {
-            let u = if (t1 - t0).abs() < f32::EPSILON {
-                0.0
-            } else {
-                (t - t0) / (t1 - t0)
-            };
-            return [
-                lerp_u8(c0[0], c1[0], u),
-                lerp_u8(c0[1], c1[1], u),
-                lerp_u8(c0[2], c1[2], u),
-            ];
-        }
-    }
-    stops[stops.len() - 1].1
-}
 
-fn lerp_u8(a: u8, b: u8, t: f32) -> u8 {
-    (a as f32 + (b as f32 - a as f32) * t).round() as u8
-}
+    #[test]
+    fn identity_is_luma_passthrough_table() {
+        let map = resolve_lut("IDENTITY", Path::new(".")).unwrap();
+        assert_eq!(map.table()[0], [0, 0, 0]);
+        assert_eq!(map.table()[128], [128, 128, 128]);
+        assert_eq!(map.table()[255], [255, 255, 255]);
+    }
 
-fn resample_to_strip(img: &RgbaImage) -> RgbaImage {
-    if img.width() == 256 && img.height() == 1 {
-        return img.clone();
+    #[test]
+    fn unknown_id_fails_explicitly() {
+        let error = resolve_lut("P9", Path::new(".")).unwrap_err();
+        assert!(error.to_string().contains("unknown built-in lut"), "{error}");
     }
-    let mut out = RgbaImage::new(256, 1);
-    let src_w = img.width().max(1);
-    let y = img.height() / 2;
-    for x in 0..256u32 {
-        let sx = ((x as f32 / 255.0) * (src_w - 1) as f32).round() as u32;
-        out.put_pixel(x, 0, *img.get_pixel(sx.min(src_w - 1), y.min(img.height() - 1)));
-    }
-    out
-}
 
-/// Apply gradient-map grading to an RGB canvas (`lut_mix` in `[0, 1]`).
-pub fn apply_lut_rgb(canvas: &mut RgbImage, lut: &RgbaImage, mix: f32) {
-    let mix = mix.clamp(0.0, 1.0);
-    if mix <= 0.0 {
-        return;
+    #[test]
+    fn strip_upload_is_256_by_1() {
+        let map = resolve_lut("P1", Path::new(".")).unwrap();
+        let strip = grade_map_strip(&map);
+        assert_eq!((strip.width(), strip.height()), (256, 1));
     }
-    let strip = resample_to_strip(lut);
-    for pixel in canvas.pixels_mut() {
-        let r = pixel[0] as f32 / 255.0;
-        let g = pixel[1] as f32 / 255.0;
-        let b = pixel[2] as f32 / 255.0;
-        let luma = (0.2126 * r + 0.7152 * g + 0.0722 * b).clamp(0.0, 1.0);
-        let idx = (luma * 255.0).round() as u32;
-        let graded = strip.get_pixel(idx.min(255), 0);
-        let out = Rgb([
-            mix_channel(pixel[0], graded[0], mix),
-            mix_channel(pixel[1], graded[1], mix),
-            mix_channel(pixel[2], graded[2], mix),
-        ]);
-        *pixel = out;
-    }
-}
-
-fn mix_channel(src: u8, graded: u8, mix: f32) -> u8 {
-    (src as f32 * (1.0 - mix) + graded as f32 * mix).round() as u8
 }

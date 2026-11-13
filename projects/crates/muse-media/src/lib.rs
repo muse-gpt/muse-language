@@ -15,7 +15,7 @@ pub use compose::{
     plan_grain, plan_has_images,
     plan_lut, plan_vignette,
 };
-pub use lut::{apply_lut_rgb, resolve_lut};
+pub use lut::{grade_map_strip, resolve_lut};
 pub use gpu::{
     CompositorKind, CompositorPreference, GpuBackendInfo, GpuStatus, compositor_preference,
     preferred_compositor, probe_gpu,
