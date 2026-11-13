@@ -360,6 +360,7 @@ function runPreview(args: {
         audio_seconds: audioSeconds,
         audio_file: "preview.wav",
         audio_source: audioSource,
+        compositor: native.composeReport(),
         script: scriptPath,
     };
     writeFileSync(join(outDir, "manifest.json"), JSON.stringify(manifest, null, 2));

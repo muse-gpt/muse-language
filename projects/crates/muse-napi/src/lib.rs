@@ -192,6 +192,13 @@ pub fn mp4_encoder_status() -> Result<Value> {
     json_value(&muse_media::mp4_encoder_status())
 }
 
+/// Which compositor actually executed the latest frame (`gpu|cpu|none`),
+/// including an explicit record when `auto` fell back to CPU.
+#[napi]
+pub fn compose_report() -> Result<Value> {
+    json_value(&muse_media::compose_report())
+}
+
 /// Compose one RGB frame from a plan JSON at normalized time `t` in `[0, 1]`.
 /// Returns PNG bytes encoded by the shared host codec.
 #[napi]

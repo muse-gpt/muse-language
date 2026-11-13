@@ -11,7 +11,8 @@ pub use backend::{
     select_mp4_encoder,
 };
 pub use compose::{
-    ComposeOptions, compose_frame, plan_background_rgb, plan_bloom, plan_grain, plan_has_images,
+    ComposeOptions, ComposeReport, compose_frame, compose_report, plan_background_rgb, plan_bloom,
+    plan_grain, plan_has_images,
     plan_lut, plan_vignette,
 };
 pub use lut::{apply_lut_rgb, resolve_lut};

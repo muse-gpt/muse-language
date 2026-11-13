@@ -68,6 +68,12 @@ export type MuseNative = {
         message: string;
     };
     findFfmpegPath(): string | null;
+    /** Real compositor execution path of the latest frame (explicit on auto fallback). */
+    composeReport(): {
+        path: "gpu" | "cpu" | "none";
+        fell_back: boolean;
+        message: string;
+    };
     /** Availability of both MP4 encode paths (selected, Media Foundation, ffmpeg). */
     mp4EncoderStatus(): {
         selected: string;

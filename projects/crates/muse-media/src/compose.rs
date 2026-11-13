@@ -9,12 +9,81 @@ use std::{
     sync::OnceLock,
 };
 
-use crate::gpu::{CompositorPreference, compositor_preference};
+use crate::gpu::{CompositorKind, CompositorPreference, compositor_preference};
 
 /// Decode budget handed to the host codec. The project layer owns the limits;
 /// `unbounded` trusts the container's declared size, matching the historical
 /// Muse behaviour (no invented budget).
 pub(crate) const DECODE_LIMITS: DecodeLimits = DecodeLimits::unbounded();
+
+/// Which compositor actually executed the latest frame, and whether an
+/// `auto` preference fell back to CPU. The host must report the real
+/// execution path (§4.8), never claim hardware after a silent downgrade.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ComposeReport {
+    /// `gpu` | `cpu` | `none` (no frame composed yet).
+    pub path: &'static str,
+    /// True when `MUSE_COMPOSITOR=auto` fell back from GPU to CPU.
+    pub fell_back: bool,
+    /// GPU failure recorded at the first fallback.
+    pub message: String,
+}
+
+#[derive(Default)]
+struct ComposePath {
+    active: std::sync::atomic::AtomicU8,
+    fallback: std::sync::Mutex<Option<String>>,
+}
+
+impl ComposePath {
+    fn record(&self, kind: CompositorKind, fallback: Option<String>) {
+        let code = match kind {
+            CompositorKind::Gpu => 2,
+            CompositorKind::Cpu if fallback.is_some() => 3,
+            CompositorKind::Cpu => 1,
+        };
+        self.active.store(code, std::sync::atomic::Ordering::Relaxed);
+        if let Some(message) = fallback {
+            let mut slot = self.fallback.lock().expect("compose path mutex");
+            let first = slot.is_none();
+            if first {
+                *slot = Some(message.clone());
+            }
+            if first {
+                eprintln!("muse: GPU compositor failed ({message}); using CPU compositor");
+            }
+        }
+    }
+
+    fn report(&self) -> ComposeReport {
+        match self.active.load(std::sync::atomic::Ordering::Relaxed) {
+            1 => ComposeReport { path: "cpu", fell_back: false, message: String::new() },
+            2 => ComposeReport { path: "gpu", fell_back: false, message: String::new() },
+            3 => ComposeReport {
+                path: "cpu",
+                fell_back: true,
+                message: self
+                    .fallback
+                    .lock()
+                    .expect("compose path mutex")
+                    .clone()
+                    .unwrap_or_default(),
+            },
+            _ => ComposeReport { path: "none", fell_back: false, message: String::new() },
+        }
+    }
+}
+
+static COMPOSE_PATH: ComposePath = ComposePath {
+    active: std::sync::atomic::AtomicU8::new(0),
+    fallback: std::sync::Mutex::new(None),
+};
+
+/// Execution path of the latest composed frame for host reporting.
+#[must_use]
+pub fn compose_report() -> ComposeReport {
+    COMPOSE_PATH.report()
+}
 
 #[derive(Debug, Clone)]
 pub struct ComposeOptions {
@@ -139,15 +208,28 @@ fn compose_frame_plain(
     media: &mut MediaLibrary,
 ) -> Result<RgbImage> {
     match compositor_preference() {
-        CompositorPreference::Cpu => compose_frame_cpu(plan, width, height, t, options, media),
-        CompositorPreference::Gpu => {
-            compose_frame_gpu(plan, width, height, t, options)
-                .context("GPU compositor required (MUSE_COMPOSITOR=gpu)")
+        CompositorPreference::Cpu => {
+            COMPOSE_PATH.record(CompositorKind::Cpu, None);
+            compose_frame_cpu(plan, width, height, t, options, media)
         }
-        CompositorPreference::Auto => match compose_frame_gpu(plan, width, height, t, options) {
-            Ok(image) => Ok(image),
-            Err(_) => compose_frame_cpu(plan, width, height, t, options, media),
-        },
+        CompositorPreference::Gpu => {
+            let image = compose_frame_gpu(plan, width, height, t, options)
+                .context("GPU compositor required (MUSE_COMPOSITOR=gpu)")?;
+            COMPOSE_PATH.record(CompositorKind::Gpu, None);
+            Ok(image)
+        }
+        CompositorPreference::Auto => {
+            match compose_frame_gpu(plan, width, height, t, options) {
+                Ok(image) => {
+                    COMPOSE_PATH.record(CompositorKind::Gpu, None);
+                    Ok(image)
+                }
+                Err(error) => {
+                    COMPOSE_PATH.record(CompositorKind::Cpu, Some(error.to_string()));
+                    compose_frame_cpu(plan, width, height, t, options, media)
+                }
+            }
+        }
     }
 }
 
@@ -695,7 +777,29 @@ pub fn plan_has_images(plan: &RenderPlan) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{ComposeOptions, compose_frame, lyric_card_opacity, lyric_card_ports};
+    use super::{
+        ComposeOptions, ComposePath, compose_frame, lyric_card_opacity, lyric_card_ports,
+    };
+    use crate::gpu::CompositorKind;
+
+    #[test]
+    fn compose_path_reports_real_execution_and_fallback() {
+        let path = ComposePath::default();
+        assert_eq!(path.report().path, "none");
+        path.record(CompositorKind::Cpu, None);
+        let report = path.report();
+        assert_eq!((report.path, report.fell_back, report.message.as_str()), ("cpu", false, ""));
+        path.record(CompositorKind::Gpu, None);
+        let report = path.report();
+        assert_eq!((report.path, report.fell_back), ("gpu", false));
+        path.record(CompositorKind::Cpu, Some("no adapter".into()));
+        let report = path.report();
+        assert_eq!(
+            (report.path, report.fell_back, report.message.as_str()),
+            ("cpu", true, "no adapter"),
+            "auto fallback must be reported as CPU execution with the GPU failure"
+        );
+    }
     use image::{Rgb, RgbImage};
     use media_codec::MediaLibrary;
     use muse_ir::{
