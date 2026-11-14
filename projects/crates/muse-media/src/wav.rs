@@ -89,6 +89,9 @@ pub fn mix_plan_audio(
         bgm: None,
         narration: None,
         sfx: Vec::new(),
+        voice: Vec::new(),
+        notes: Vec::new(),
+        patterns: Vec::new(),
         clips,
     };
     let mut media = MediaLibrary::new();
