@@ -49,17 +49,15 @@ muse-score = { path = "projects/crates/muse-score" }
 muse-media = { path = "projects/crates/muse-media" }
 muse-mcp = { path = "projects/crates/muse-mcp" }
 muse-napi = { path = "projects/crates/muse-napi" }
-# Shared neutral media tree (https://github.com/muse-gpt/ucf.rs.git). Local
-# development resolves the leaves by path; CI fetches the same revision into
-# the sibling directory. The formal rev pin lands with the release gate:
-# media-image/media-codec/media-types/media-post/media-text/media-audio = rev 59afb7d53ae4a3caff91d1db59a287f054cf9b33
-media-image = { path = "../media.rs/projects/media/media.image" }
-media-codec = { path = "../media.rs/projects/media/media.codec" }
-media-types = { path = "../media.rs/projects/media/media.types" }
-media-post = { path = "../media.rs/projects/media/media.post" }
-media-audio = { path = "../media.rs/projects/media/media.audio" }
-media-text = { path = "../media.rs/projects/media/media.text", default-features = false, features = ["paint"] }
-geometry-types = { path = "../media.rs/projects/geometry/geometry.types" }
+# Shared neutral media tree. The media/geometry crates live in boost.rs and are
+# consumed here at one pinned revision, the same one the product repositories use.
+media-image = { git = "https://github.com/oovm/boost.rs.git", rev = "c4ad7e17499170b38df42847996cdfe55bf58d38" }
+media-codec = { git = "https://github.com/oovm/boost.rs.git", rev = "c4ad7e17499170b38df42847996cdfe55bf58d38" }
+media-types = { git = "https://github.com/oovm/boost.rs.git", rev = "c4ad7e17499170b38df42847996cdfe55bf58d38" }
+media-post = { git = "https://github.com/oovm/boost.rs.git", rev = "c4ad7e17499170b38df42847996cdfe55bf58d38" }
+media-audio = { git = "https://github.com/oovm/boost.rs.git", rev = "c4ad7e17499170b38df42847996cdfe55bf58d38" }
+media-text = { git = "https://github.com/oovm/boost.rs.git", rev = "c4ad7e17499170b38df42847996cdfe55bf58d38", default-features = false, features = ["paint"] }
+geometry-types = { git = "https://github.com/oovm/boost.rs.git", rev = "c4ad7e17499170b38df42847996cdfe55bf58d38" }
 napi = { version = "3", default-features = true, features = ["napi4", "serde-json"] }
 napi-derive = "3"
 napi-build = "2"
@@ -67,3 +65,4 @@ napi-build = "2"
 [profile.release]
 lto = true
 panic = "abort"
+
