@@ -51,13 +51,13 @@ muse-mcp = { path = "projects/crates/muse-mcp" }
 muse-napi = { path = "projects/crates/muse-napi" }
 # Shared neutral media tree. The media/geometry crates live in boost.rs and are
 # consumed here at one pinned revision, the same one the product repositories use.
-media-image = { git = "https://github.com/oovm/boost.rs.git", rev = "c4ad7e17499170b38df42847996cdfe55bf58d38" }
-media-codec = { git = "https://github.com/oovm/boost.rs.git", rev = "c4ad7e17499170b38df42847996cdfe55bf58d38" }
-media-types = { git = "https://github.com/oovm/boost.rs.git", rev = "c4ad7e17499170b38df42847996cdfe55bf58d38" }
-media-post = { git = "https://github.com/oovm/boost.rs.git", rev = "c4ad7e17499170b38df42847996cdfe55bf58d38" }
-media-audio = { git = "https://github.com/oovm/boost.rs.git", rev = "c4ad7e17499170b38df42847996cdfe55bf58d38" }
-media-text = { git = "https://github.com/oovm/boost.rs.git", rev = "c4ad7e17499170b38df42847996cdfe55bf58d38", default-features = false, features = ["paint"] }
-geometry-types = { git = "https://github.com/oovm/boost.rs.git", rev = "c4ad7e17499170b38df42847996cdfe55bf58d38" }
+media-image = { git = "https://github.com/oovm/boost.rs.git", rev = "50e3d95d57d7c8fdaa95f4ea9356f4b083e02737" }
+media-codec = { git = "https://github.com/oovm/boost.rs.git", rev = "50e3d95d57d7c8fdaa95f4ea9356f4b083e02737" }
+media-types = { git = "https://github.com/oovm/boost.rs.git", rev = "50e3d95d57d7c8fdaa95f4ea9356f4b083e02737" }
+media-post = { git = "https://github.com/oovm/boost.rs.git", rev = "50e3d95d57d7c8fdaa95f4ea9356f4b083e02737" }
+media-audio = { git = "https://github.com/oovm/boost.rs.git", rev = "50e3d95d57d7c8fdaa95f4ea9356f4b083e02737" }
+media-text = { git = "https://github.com/oovm/boost.rs.git", rev = "50e3d95d57d7c8fdaa95f4ea9356f4b083e02737", default-features = false, features = ["paint"] }
+geometry-types = { git = "https://github.com/oovm/boost.rs.git", rev = "50e3d95d57d7c8fdaa95f4ea9356f4b083e02737" }
 napi = { version = "3", default-features = true, features = ["napi4", "serde-json"] }
 napi-derive = "3"
 napi-build = "2"

@@ -17,12 +17,6 @@ jobs:
     steps:
       - run: git config --global core.autocrlf false
       - uses: actions/checkout@v7
-      - name: Fetch media.rs sibling tree
-        shell: bash
-        run: |
-          set -euo pipefail
-          git clone --no-checkout https://github.com/muse-gpt/ucf.rs.git ../media.rs
-          git -C ../media.rs checkout 59afb7d53ae4a3caff91d1db59a287f054cf9b33
       - uses: dtolnay/rust-toolchain@nightly
       - name: Build workspace
         run: cargo build --release
