@@ -88,7 +88,7 @@ pub struct PrefabNestedInstance {
 /// Load a prefab definition from a true VON file (`oak-von`).
 pub fn load_prefab_von(path: &Path) -> Result<PrefabDefinition> {
     let raw = fs::read_to_string(path).with_context(|| format!("cannot read {}", path.display()))?;
-    let def: PrefabDefinition = oak_von::from_str(&raw)
+    let def: PrefabDefinition = data_text_von::from_str(&raw)
         .map_err(|err| anyhow::anyhow!("invalid VON prefab {}: {err}", path.display()))?;
     validate_prefab(&def)?;
     Ok(def)

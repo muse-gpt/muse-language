@@ -72,7 +72,7 @@ pub fn load_manifest(project: &Path) -> Result<ProjectManifest> {
     let path = manifest_path(project)?;
     let raw =
         fs::read_to_string(&path).with_context(|| format!("cannot read {}", path.display()))?;
-    let manifest: ProjectManifest = oak_von::from_str(&raw).map_err(|err| {
+    let manifest: ProjectManifest = data_text_von::from_str(&raw).map_err(|err| {
         anyhow::anyhow!("invalid VON project manifest {}: {err}", path.display())
     })?;
     validate_manifest(&manifest)?;
@@ -323,7 +323,7 @@ mod tests {
 
     #[test]
     fn validates_multiple_outputs() {
-        let m: ProjectManifest = oak_von::from_str(
+        let m: ProjectManifest = data_text_von::from_str(
             r#"{
   project: { id: "p", version: "0.1" }
   entries: [
@@ -341,7 +341,7 @@ mod tests {
 
     #[test]
     fn validates_release_jobs() {
-        let m: ProjectManifest = oak_von::from_str(
+        let m: ProjectManifest = data_text_von::from_str(
             r#"{
   project: { id: "p", version: "0.1" }
   entries: [
@@ -380,7 +380,7 @@ mod tests {
 
     #[test]
     fn rejects_job_unknown_entry_or_output() {
-        let bad_entry: ProjectManifest = oak_von::from_str(
+        let bad_entry: ProjectManifest = data_text_von::from_str(
             r#"{
   project: { id: "p", version: "0.1" }
   entries: [ { id: "e", source: "e.muse", outputs: [ { id: "a", kind: "audio", path: "a.wav" } ] } ]
@@ -391,7 +391,7 @@ mod tests {
         let err = validate_manifest(&bad_entry).unwrap_err().to_string();
         assert!(err.contains("unknown entry"), "{err}");
 
-        let bad_out: ProjectManifest = oak_von::from_str(
+        let bad_out: ProjectManifest = data_text_von::from_str(
             r#"{
   project: { id: "p", version: "0.1" }
   entries: [ { id: "e", source: "e.muse", outputs: [ { id: "a", kind: "audio", path: "a.wav" } ] } ]
@@ -405,7 +405,7 @@ mod tests {
 
     #[test]
     fn merges_entry_and_output_render_overrides() {
-        let m: ProjectManifest = oak_von::from_str(
+        let m: ProjectManifest = data_text_von::from_str(
             r#"{
   project: { id: "p", version: "0.1" }
   render: { width: 1920, height: 1080, frame_rate: 24 }
