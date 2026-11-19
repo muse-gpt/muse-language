@@ -44,3 +44,6 @@ projects/packages/muse-*/lib/*.dll
 projects/packages/muse-*/lib/*.so
 projects/packages/muse-*/lib/*.dylib
 
+
+# npm secrets (nifty)
+.secrets/
