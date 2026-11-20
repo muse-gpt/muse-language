@@ -10,7 +10,7 @@ use media_post::{
 use muse_ir::{RenderPlan, ShotTransition};
 use std::{
     path::{Path, PathBuf},
-    sync::OnceLock,
+    sync::Mutex,
 };
 
 use crate::gpu::{CompositorKind, CompositorPreference, compositor_preference};
@@ -316,10 +316,19 @@ fn compose_frame_gpu(
 ) -> Result<RgbImage> {
     use crate::gpu::{GpuComposeOptions, GpuCompositor};
 
-    static GPU: OnceLock<Result<GpuCompositor, String>> = OnceLock::new();
-    let compositor = match GPU.get_or_init(|| GpuCompositor::new().map_err(|e| e.to_string())) {
-        Ok(gpu) => gpu,
-        Err(message) => bail!("{message}"),
+    // The wgpu device/queue are not `Sync`, so the cache lives behind a mutex.
+    // Failures are not cached: the next frame retries device creation.
+    static GPU: Mutex<Option<GpuCompositor>> = Mutex::new(None);
+    let mut cached = GPU.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    if cached.is_none() {
+        match GpuCompositor::new() {
+            Ok(gpu) => *cached = Some(gpu),
+            Err(error) => bail!("{error}"),
+        }
+    }
+    let compositor = match cached.as_ref() {
+        Some(gpu) => gpu,
+        None => bail!("GPU compositor unavailable"),
     };
 
     let layers: Vec<_> = plan
