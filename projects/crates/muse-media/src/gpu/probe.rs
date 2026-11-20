@@ -20,7 +20,8 @@ pub enum GpuStatus {
     Disabled,
 }
 
-/// `MUSE_COMPOSITOR=gpu|cpu|auto` (default `auto`).
+/// `MUSE_COMPOSITOR=gpu|cpu|auto` (default `auto`). Parsed so hosts can report
+/// why every frame is composed on the CPU reference path.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CompositorPreference {
     Auto,
@@ -45,75 +46,27 @@ pub fn preferred_compositor() -> CompositorKind {
     match compositor_preference() {
         CompositorPreference::Cpu => CompositorKind::Cpu,
         CompositorPreference::Gpu => CompositorKind::Gpu,
-        CompositorPreference::Auto => match probe_gpu().status {
-            GpuStatus::Available => CompositorKind::Gpu,
-            _ => CompositorKind::Cpu,
-        },
+        CompositorPreference::Auto => CompositorKind::Cpu,
     }
 }
 
-#[cfg(feature = "gpu")]
 pub fn probe_gpu() -> GpuBackendInfo {
     match compositor_preference() {
-        CompositorPreference::Cpu => {
-            return GpuBackendInfo {
-                status: GpuStatus::Disabled,
-                preferred: CompositorKind::Cpu,
-                adapter_name: None,
-                backend: None,
-                device_type: None,
-                message: "GPU compositor disabled via MUSE_COMPOSITOR=cpu".into(),
-            };
-        }
-        CompositorPreference::Gpu | CompositorPreference::Auto => {}
-    }
-
-    let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
-        backends: wgpu::Backends::PRIMARY,
-        ..Default::default()
-    });
-    let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
-        power_preference: wgpu::PowerPreference::HighPerformance,
-        compatible_surface: None,
-        force_fallback_adapter: false,
-    }));
-
-    match adapter {
-        Ok(adapter) => {
-            let info = adapter.get_info();
-            let preferred = match compositor_preference() {
-                CompositorPreference::Cpu => CompositorKind::Cpu,
-                CompositorPreference::Gpu => CompositorKind::Gpu,
-                CompositorPreference::Auto => CompositorKind::Gpu,
-            };
-            GpuBackendInfo {
-                status: GpuStatus::Available,
-                preferred,
-                adapter_name: Some(info.name),
-                backend: Some(format!("{:?}", info.backend)),
-                device_type: Some(format!("{:?}", info.device_type)),
-                message: "wgpu adapter available".into(),
-            }
-        }
-        Err(error) => GpuBackendInfo {
-            status: GpuStatus::Unavailable,
+        CompositorPreference::Cpu => GpuBackendInfo {
+            status: GpuStatus::Disabled,
             preferred: CompositorKind::Cpu,
             adapter_name: None,
             backend: None,
             device_type: None,
-            message: format!("no wgpu adapter: {error}"),
+            message: "GPU compositor disabled via MUSE_COMPOSITOR=cpu".into(),
         },
-    }
-}
-
-#[cfg(not(feature = "gpu"))]
-pub fn probe_gpu() -> GpuBackendInfo {
-    GpuBackendInfo {
-        status: GpuStatus::Disabled,
-        preferred: CompositorKind::Cpu,
-        adapter_name: None,
-        backend: None,
-        device_type: None,
-        message: "muse-media built without `gpu` feature".into(),
+        CompositorPreference::Gpu | CompositorPreference::Auto => GpuBackendInfo {
+            status: GpuStatus::Disabled,
+            preferred: CompositorKind::Cpu,
+            adapter_name: None,
+            backend: None,
+            device_type: None,
+            message: "gpu retired: media-gpu D3D12 backend not yet wired for muse effects".into(),
+        },
     }
 }

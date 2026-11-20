@@ -1,5 +1,5 @@
 //! Deterministic frame composition from a [`RenderPlan`].
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 use image::{Rgb, RgbImage, imageops};
 use media_codec::{DecodeLimits, MediaLibrary};
 use media_image::{Bitmap, Frame};
@@ -8,12 +8,12 @@ use media_post::{
     SlamStamp,
 };
 use muse_ir::{RenderPlan, ShotTransition};
-use std::{
-    path::{Path, PathBuf},
-    sync::Mutex,
-};
+use std::path::{Path, PathBuf};
 
 use crate::gpu::{CompositorKind, CompositorPreference, compositor_preference};
+
+/// Recorded whenever a GPU request degrades to the CPU reference path.
+const GPU_RETIRED: &str = "gpu retired: media-gpu D3D12 backend not yet wired for muse effects";
 
 /// Decode budget handed to the host codec. The project layer owns the limits;
 /// `unbounded` trusts the container's declared size, matching the historical
@@ -27,9 +27,9 @@ pub(crate) const DECODE_LIMITS: DecodeLimits = DecodeLimits::unbounded();
 pub struct ComposeReport {
     /// `gpu` | `cpu` | `none` (no frame composed yet).
     pub path: &'static str,
-    /// True when `MUSE_COMPOSITOR=auto` fell back from GPU to CPU.
+    /// True when a GPU request (`MUSE_COMPOSITOR=auto|gpu`) degraded to CPU.
     pub fell_back: bool,
-    /// GPU failure recorded at the first fallback.
+    /// Explicit degradation reason recorded at the first downgrade.
     pub message: String,
 }
 
@@ -54,7 +54,7 @@ impl ComposePath {
                 *slot = Some(message.clone());
             }
             if first {
-                eprintln!("muse: GPU compositor failed ({message}); using CPU compositor");
+                eprintln!("muse: {message}; using CPU compositor");
             }
         }
     }
@@ -134,8 +134,8 @@ fn parse_hex_color(raw: &str) -> Option<(u8, u8, u8)> {
 ///
 /// Returns an RGBA8 [`Frame`] from the shared image storage; `media` is the
 /// per-render decode cache (host codec import with [`DECODE_LIMITS`]).
-/// Prefers the GPU compositor when available (`MUSE_COMPOSITOR=auto|gpu`).
-/// Forced GPU (`MUSE_COMPOSITOR=gpu`) fails explicitly if the backend cannot init.
+/// Always composes on the CPU reference path; a requested GPU path is reported
+/// as an explicit degradation (contract 14 §1.2 retired the wgpu compositor).
 /// Incoming shot `xfade` / `flash` / `iris` / `slices` blend previous and current looks when active.
 pub fn compose_frame(
     plan: &RenderPlan,
@@ -231,23 +231,11 @@ fn compose_frame_plain(
             COMPOSE_PATH.record(CompositorKind::Cpu, None);
             compose_frame_cpu(plan, width, height, t, options, media)
         }
-        CompositorPreference::Gpu => {
-            let image = compose_frame_gpu(plan, width, height, t, options, media)
-                .context("GPU compositor required (MUSE_COMPOSITOR=gpu)")?;
-            COMPOSE_PATH.record(CompositorKind::Gpu, None);
-            Ok(image)
-        }
-        CompositorPreference::Auto => {
-            match compose_frame_gpu(plan, width, height, t, options, media) {
-                Ok(image) => {
-                    COMPOSE_PATH.record(CompositorKind::Gpu, None);
-                    Ok(image)
-                }
-                Err(error) => {
-                    COMPOSE_PATH.record(CompositorKind::Cpu, Some(error.to_string()));
-                    compose_frame_cpu(plan, width, height, t, options, media)
-                }
-            }
+        CompositorPreference::Gpu | CompositorPreference::Auto => {
+            // Contract 14 §1.2: no third-party GPU runtime on the production path.
+            // Keep the GPU request visible in the report while composing on CPU.
+            COMPOSE_PATH.record(CompositorKind::Cpu, Some(GPU_RETIRED.to_owned()));
+            compose_frame_gpu(plan, width, height, t, options, media)
         }
     }
 }
@@ -305,7 +293,8 @@ fn compose_frame_cpu(
     Ok(canvas)
 }
 
-#[cfg(feature = "gpu")]
+/// Retired GPU entry point. The CPU reference implementation is the single
+/// renderer; every operator and its order stay exactly as [`compose_frame_cpu`].
 fn compose_frame_gpu(
     plan: &RenderPlan,
     width: u32,
@@ -314,66 +303,7 @@ fn compose_frame_gpu(
     options: &ComposeOptions,
     media: &mut MediaLibrary,
 ) -> Result<RgbImage> {
-    use crate::gpu::{GpuComposeOptions, GpuCompositor};
-
-    // The wgpu device/queue are not `Sync`, so the cache lives behind a mutex.
-    // Failures are not cached: the next frame retries device creation.
-    static GPU: Mutex<Option<GpuCompositor>> = Mutex::new(None);
-    let mut cached = GPU.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    if cached.is_none() {
-        match GpuCompositor::new() {
-            Ok(gpu) => *cached = Some(gpu),
-            Err(error) => bail!("{error}"),
-        }
-    }
-    let compositor = match cached.as_ref() {
-        Some(gpu) => gpu,
-        None => bail!("GPU compositor unavailable"),
-    };
-
-    let layers: Vec<_> = plan
-        .visuals_at_normalized(t)
-        .into_iter()
-        .cloned()
-        .collect();
-    let rgba = compositor.compose_layers(
-        &layers,
-        &GpuComposeOptions {
-            width,
-            height,
-            asset_root: options.asset_root.clone(),
-            time: t,
-            shot_progress: plan.shot_progress_normalized(t),
-        },
-        media,
-    )?;
-    // Geometry FX stay on GPU; glyph labels and lyrics rasterize through
-    // `media.text` over the shared frame (G7-W3).
-    let mut frame = Frame::new(width, height);
-    frame.pixels.copy_from_slice(&rgba.into_raw());
-    let progress = plan.shot_progress_normalized(t);
-    let layer_refs: Vec<_> = layers.iter().collect();
-    if let Some((strength, label)) = layers_stamp(&layer_refs) {
-        if let Some(label) = label.as_deref() {
-            crate::font_stamp::draw_stamp_label(&mut frame, label, strength, progress)?;
-        }
-    }
-    paint_lyric_layers(&mut frame, plan, t)?;
-    let mut canvas = rgb_from_frame(&frame);
-    paint_progress_cue(&mut canvas, t);
-    Ok(canvas)
-}
-
-#[cfg(not(feature = "gpu"))]
-fn compose_frame_gpu(
-    _plan: &RenderPlan,
-    _width: u32,
-    _height: u32,
-    _t: f32,
-    _options: &ComposeOptions,
-    _media: &mut MediaLibrary,
-) -> Result<RgbImage> {
-    bail!("muse-media built without `gpu` feature")
+    compose_frame_cpu(plan, width, height, t, options, media)
 }
 
 fn paint_progress_cue(canvas: &mut RgbImage, t: f32) {

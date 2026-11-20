@@ -1,7 +1,4 @@
 //! Render backends and frame composition for Muse.
-//! wgpu 25's `Send`/`Sync` chains are deeper than the default auto-trait
-//! recursion limit, which would leave the GPU compositor cache unprovable.
-#![recursion_limit = "256"]
 mod backend;
 mod compose;
 mod font_stamp;

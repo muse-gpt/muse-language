@@ -1,13 +1,12 @@
-//! GPU compositor backend (ADR 0005). Formal path for Muse frame composition.
+//! Compositor status reporting.
 //!
-//! ffmpeg remains encode-only / early smoke — not a layer compositor.
+//! The wgpu backend was retired (contract 14 §1.2: production paths must not
+//! depend on third-party GPU runtimes). Muse composes every frame through the
+//! CPU reference path; these types exist so hosts can still report the
+//! requested preference and why it degraded.
 
-#[cfg(feature = "gpu")]
-mod compositor;
 mod probe;
 
-#[cfg(feature = "gpu")]
-pub use compositor::{GpuCompositor, GpuComposeOptions};
 pub use probe::{
     CompositorPreference, GpuBackendInfo, GpuStatus, compositor_preference, preferred_compositor,
     probe_gpu,

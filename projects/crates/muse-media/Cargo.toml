@@ -6,7 +6,9 @@ license.workspace = true
 
 [features]
 default = ["gpu"]
-gpu = ["dep:wgpu", "dep:pollster", "dep:bytemuck"]
+# Retained so downstream `--features gpu` keeps building. The wgpu backend was
+# retired (contract 14 §1.2); the feature no longer pulls a GPU runtime.
+gpu = []
 
 [dependencies]
 anyhow.workspace = true
@@ -21,6 +23,3 @@ media-types.workspace = true
 muse-ir = { path = "../muse-ir" }
 muse-types = { path = "../muse-types" }
 serde.workspace = true
-wgpu = { workspace = true, optional = true }
-pollster = { workspace = true, optional = true }
-bytemuck = { workspace = true, optional = true }
