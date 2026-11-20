@@ -74,7 +74,6 @@ dependencies = [
 [[package]]
 name = "atlas-cloud"
 version = "0.1.0"
-source = "git+https://github.com/oovm/boost.rs.git?rev=f7ec3506a8528bcb51d4002aecafc96d7d17051f#f7ec3506a8528bcb51d4002aecafc96d7d17051f"
 dependencies = [
  "boost-crypto",
  "boost-net",
@@ -181,7 +180,6 @@ dependencies = [
 [[package]]
 name = "boost-collection"
 version = "0.1.0"
-source = "git+https://github.com/oovm/boost.rs.git?rev=f7ec3506a8528bcb51d4002aecafc96d7d17051f#f7ec3506a8528bcb51d4002aecafc96d7d17051f"
 dependencies = [
  "boost-collection-macro",
 ]
@@ -189,7 +187,6 @@ dependencies = [
 [[package]]
 name = "boost-collection-macro"
 version = "0.1.0"
-source = "git+https://github.com/oovm/boost.rs.git?rev=f7ec3506a8528bcb51d4002aecafc96d7d17051f#f7ec3506a8528bcb51d4002aecafc96d7d17051f"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -199,12 +196,10 @@ dependencies = [
 [[package]]
 name = "boost-console"
 version = "0.1.0"
-source = "git+https://github.com/oovm/boost.rs.git?rev=f7ec3506a8528bcb51d4002aecafc96d7d17051f#f7ec3506a8528bcb51d4002aecafc96d7d17051f"
 
 [[package]]
 name = "boost-crypto"
 version = "0.1.0"
-source = "git+https://github.com/oovm/boost.rs.git?rev=f7ec3506a8528bcb51d4002aecafc96d7d17051f#f7ec3506a8528bcb51d4002aecafc96d7d17051f"
 dependencies = [
  "boost-random",
  "data-encoding",
@@ -217,19 +212,17 @@ dependencies = [
 [[package]]
 name = "boost-harness"
 version = "0.1.0"
-source = "git+https://github.com/oovm/boost.rs.git?rev=f7ec3506a8528bcb51d4002aecafc96d7d17051f#f7ec3506a8528bcb51d4002aecafc96d7d17051f"
 dependencies = [
  "boost-console",
  "boost-harness-macro",
  "boost-math",
- "boost-source 0.1.0 (git+https://github.com/oovm/boost.rs.git?rev=f7ec3506a8528bcb51d4002aecafc96d7d17051f)",
+ "boost-source 0.1.0",
  "serde",
 ]
 
 [[package]]
 name = "boost-harness-macro"
 version = "0.1.0"
-source = "git+https://github.com/oovm/boost.rs.git?rev=f7ec3506a8528bcb51d4002aecafc96d7d17051f#f7ec3506a8528bcb51d4002aecafc96d7d17051f"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -239,7 +232,6 @@ dependencies = [
 [[package]]
 name = "boost-math"
 version = "0.1.0"
-source = "git+https://github.com/oovm/boost.rs.git?rev=f7ec3506a8528bcb51d4002aecafc96d7d17051f#f7ec3506a8528bcb51d4002aecafc96d7d17051f"
 dependencies = [
  "boost-collection",
 ]
@@ -247,7 +239,6 @@ dependencies = [
 [[package]]
 name = "boost-net"
 version = "0.1.0"
-source = "git+https://github.com/oovm/boost.rs.git?rev=f7ec3506a8528bcb51d4002aecafc96d7d17051f#f7ec3506a8528bcb51d4002aecafc96d7d17051f"
 dependencies = [
  "boost-crypto",
  "boost-random",
@@ -259,7 +250,6 @@ dependencies = [
 [[package]]
 name = "boost-random"
 version = "0.1.0"
-source = "git+https://github.com/oovm/boost.rs.git?rev=f7ec3506a8528bcb51d4002aecafc96d7d17051f#f7ec3506a8528bcb51d4002aecafc96d7d17051f"
 dependencies = [
  "boost-math",
 ]
@@ -267,7 +257,6 @@ dependencies = [
 [[package]]
 name = "boost-source"
 version = "0.1.0"
-source = "git+https://github.com/oovm/rust-boost?rev=71db8fa50f49e3693640cbd19e64ad9c797e5932#71db8fa50f49e3693640cbd19e64ad9c797e5932"
 dependencies = [
  "serde",
 ]
@@ -275,7 +264,7 @@ dependencies = [
 [[package]]
 name = "boost-source"
 version = "0.1.0"
-source = "git+https://github.com/oovm/boost.rs.git?rev=f7ec3506a8528bcb51d4002aecafc96d7d17051f#f7ec3506a8528bcb51d4002aecafc96d7d17051f"
+source = "git+https://github.com/oovm/boost.rs.git?rev=5e859e3fc3ef50e3304bd766b8b4058541df325b#5e859e3fc3ef50e3304bd766b8b4058541df325b"
 dependencies = [
  "serde",
 ]
@@ -548,12 +537,10 @@ dependencies = [
 [[package]]
 name = "data-binary-asn1"
 version = "0.1.0"
-source = "git+https://github.com/oovm/boost.rs.git?rev=f7ec3506a8528bcb51d4002aecafc96d7d17051f#f7ec3506a8528bcb51d4002aecafc96d7d17051f"
 
 [[package]]
 name = "data-binary-core"
 version = "0.1.0"
-source = "git+https://github.com/oovm/boost.rs.git?rev=f7ec3506a8528bcb51d4002aecafc96d7d17051f#f7ec3506a8528bcb51d4002aecafc96d7d17051f"
 dependencies = [
  "boost-harness",
 ]
@@ -561,37 +548,45 @@ dependencies = [
 [[package]]
 name = "data-binary-ttf"
 version = "0.1.0"
-source = "git+https://github.com/oovm/boost.rs.git?rev=f7ec3506a8528bcb51d4002aecafc96d7d17051f#f7ec3506a8528bcb51d4002aecafc96d7d17051f"
 dependencies = [
  "data-binary-core",
 ]
 
 [[package]]
+name = "data-checksum"
+version = "0.1.0"
+
+[[package]]
+name = "data-checksum"
+version = "0.1.0"
+source = "git+https://github.com/oovm/boost.rs.git?rev=5e859e3fc3ef50e3304bd766b8b4058541df325b#5e859e3fc3ef50e3304bd766b8b4058541df325b"
+
+[[package]]
+name = "data-compression"
+version = "0.1.0"
+dependencies = [
+ "data-binary-core",
+ "data-checksum 0.1.0",
+]
+
+[[package]]
 name = "data-encoding"
 version = "0.1.0"
-source = "git+https://github.com/oovm/boost.rs.git?rev=f7ec3506a8528bcb51d4002aecafc96d7d17051f#f7ec3506a8528bcb51d4002aecafc96d7d17051f"
 
 [[package]]
 name = "data-text-core"
 version = "0.1.0"
-source = "git+https://github.com/oovm/rust-boost?rev=71db8fa50f49e3693640cbd19e64ad9c797e5932#71db8fa50f49e3693640cbd19e64ad9c797e5932"
+source = "git+https://github.com/oovm/boost.rs.git?rev=5e859e3fc3ef50e3304bd766b8b4058541df325b#5e859e3fc3ef50e3304bd766b8b4058541df325b"
 dependencies = [
- "boost-source 0.1.0 (git+https://github.com/oovm/rust-boost?rev=71db8fa50f49e3693640cbd19e64ad9c797e5932)",
+ "boost-source 0.1.0 (git+https://github.com/oovm/boost.rs.git?rev=5e859e3fc3ef50e3304bd766b8b4058541df325b)",
+ "data-checksum 0.1.0 (git+https://github.com/oovm/boost.rs.git?rev=5e859e3fc3ef50e3304bd766b8b4058541df325b)",
  "serde",
-]
-
-[[package]]
-name = "data-text-formatter"
-version = "0.1.0"
-source = "git+https://github.com/oovm/rust-boost?rev=71db8fa50f49e3693640cbd19e64ad9c797e5932#71db8fa50f49e3693640cbd19e64ad9c797e5932"
-dependencies = [
- "data-text-core",
 ]
 
 [[package]]
 name = "data-text-pretty"
 version = "0.1.0"
-source = "git+https://github.com/oovm/rust-boost?rev=71db8fa50f49e3693640cbd19e64ad9c797e5932#71db8fa50f49e3693640cbd19e64ad9c797e5932"
+source = "git+https://github.com/oovm/boost.rs.git?rev=5e859e3fc3ef50e3304bd766b8b4058541df325b#5e859e3fc3ef50e3304bd766b8b4058541df325b"
 dependencies = [
  "data-text-core",
  "language-macro",
@@ -602,10 +597,9 @@ dependencies = [
 [[package]]
 name = "data-text-von"
 version = "0.1.0"
-source = "git+https://github.com/oovm/rust-boost?rev=71db8fa50f49e3693640cbd19e64ad9c797e5932#71db8fa50f49e3693640cbd19e64ad9c797e5932"
+source = "git+https://github.com/oovm/boost.rs.git?rev=5e859e3fc3ef50e3304bd766b8b4058541df325b#5e859e3fc3ef50e3304bd766b8b4058541df325b"
 dependencies = [
  "data-text-core",
- "data-text-formatter",
  "data-text-pretty",
  "serde",
 ]
@@ -872,7 +866,6 @@ dependencies = [
 [[package]]
 name = "geometry"
 version = "0.1.0"
-source = "git+https://github.com/oovm/boost.rs.git?rev=f7ec3506a8528bcb51d4002aecafc96d7d17051f#f7ec3506a8528bcb51d4002aecafc96d7d17051f"
 dependencies = [
  "geometry-motion",
  "geometry-types",
@@ -881,7 +874,6 @@ dependencies = [
 [[package]]
 name = "geometry-motion"
 version = "0.1.0"
-source = "git+https://github.com/oovm/boost.rs.git?rev=f7ec3506a8528bcb51d4002aecafc96d7d17051f#f7ec3506a8528bcb51d4002aecafc96d7d17051f"
 dependencies = [
  "geometry-types",
  "serde",
@@ -890,7 +882,6 @@ dependencies = [
 [[package]]
 name = "geometry-types"
 version = "0.1.0"
-source = "git+https://github.com/oovm/boost.rs.git?rev=f7ec3506a8528bcb51d4002aecafc96d7d17051f#f7ec3506a8528bcb51d4002aecafc96d7d17051f"
 dependencies = [
  "serde",
 ]
@@ -1021,7 +1012,6 @@ dependencies = [
 [[package]]
 name = "hardware-program"
 version = "0.1.0"
-source = "git+https://github.com/oovm/boost.rs.git?rev=f7ec3506a8528bcb51d4002aecafc96d7d17051f#f7ec3506a8528bcb51d4002aecafc96d7d17051f"
 dependencies = [
  "serde",
  "serde_json",
@@ -1361,7 +1351,7 @@ checksum = "e2db585e1d738fc771bf08a151420d3ed193d9d895a36df7f6f8a9456b911ddc"
 [[package]]
 name = "language-macro"
 version = "0.1.0"
-source = "git+https://github.com/oovm/rust-boost?rev=71db8fa50f49e3693640cbd19e64ad9c797e5932#71db8fa50f49e3693640cbd19e64ad9c797e5932"
+source = "git+https://github.com/oovm/boost.rs.git?rev=5e859e3fc3ef50e3304bd766b8b4058541df325b#5e859e3fc3ef50e3304bd766b8b4058541df325b"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1492,7 +1482,6 @@ dependencies = [
 [[package]]
 name = "media-audio"
 version = "0.1.0"
-source = "git+https://github.com/oovm/boost.rs.git?rev=f7ec3506a8528bcb51d4002aecafc96d7d17051f#f7ec3506a8528bcb51d4002aecafc96d7d17051f"
 dependencies = [
  "media-codec",
  "media-dsp",
@@ -1505,7 +1494,6 @@ dependencies = [
 [[package]]
 name = "media-codec"
 version = "0.1.0"
-source = "git+https://github.com/oovm/boost.rs.git?rev=f7ec3506a8528bcb51d4002aecafc96d7d17051f#f7ec3506a8528bcb51d4002aecafc96d7d17051f"
 dependencies = [
  "media-image",
  "media-types",
@@ -1515,13 +1503,13 @@ dependencies = [
 [[package]]
 name = "media-dsp"
 version = "0.1.0"
-source = "git+https://github.com/oovm/boost.rs.git?rev=f7ec3506a8528bcb51d4002aecafc96d7d17051f#f7ec3506a8528bcb51d4002aecafc96d7d17051f"
 
 [[package]]
 name = "media-image"
 version = "0.1.0"
-source = "git+https://github.com/oovm/boost.rs.git?rev=f7ec3506a8528bcb51d4002aecafc96d7d17051f#f7ec3506a8528bcb51d4002aecafc96d7d17051f"
 dependencies = [
+ "data-checksum 0.1.0",
+ "data-compression",
  "geometry-types",
  "serde",
 ]
@@ -1529,7 +1517,6 @@ dependencies = [
 [[package]]
 name = "media-particles"
 version = "0.1.0"
-source = "git+https://github.com/oovm/boost.rs.git?rev=f7ec3506a8528bcb51d4002aecafc96d7d17051f#f7ec3506a8528bcb51d4002aecafc96d7d17051f"
 dependencies = [
  "geometry-types",
  "media-image",
@@ -1539,7 +1526,6 @@ dependencies = [
 [[package]]
 name = "media-post"
 version = "0.1.0"
-source = "git+https://github.com/oovm/boost.rs.git?rev=f7ec3506a8528bcb51d4002aecafc96d7d17051f#f7ec3506a8528bcb51d4002aecafc96d7d17051f"
 dependencies = [
  "geometry-motion",
  "geometry-types",
@@ -1554,7 +1540,6 @@ dependencies = [
 [[package]]
 name = "media-raster"
 version = "0.1.0"
-source = "git+https://github.com/oovm/boost.rs.git?rev=f7ec3506a8528bcb51d4002aecafc96d7d17051f#f7ec3506a8528bcb51d4002aecafc96d7d17051f"
 dependencies = [
  "geometry",
  "media-image",
@@ -1564,7 +1549,6 @@ dependencies = [
 [[package]]
 name = "media-synthesis"
 version = "0.1.0"
-source = "git+https://github.com/oovm/boost.rs.git?rev=f7ec3506a8528bcb51d4002aecafc96d7d17051f#f7ec3506a8528bcb51d4002aecafc96d7d17051f"
 dependencies = [
  "media-dsp",
  "media-types",
@@ -1574,7 +1558,6 @@ dependencies = [
 [[package]]
 name = "media-text"
 version = "0.1.0"
-source = "git+https://github.com/oovm/boost.rs.git?rev=f7ec3506a8528bcb51d4002aecafc96d7d17051f#f7ec3506a8528bcb51d4002aecafc96d7d17051f"
 dependencies = [
  "data-binary-ttf",
  "geometry",
@@ -1586,12 +1569,10 @@ dependencies = [
 [[package]]
 name = "media-types"
 version = "0.1.0"
-source = "git+https://github.com/oovm/boost.rs.git?rev=f7ec3506a8528bcb51d4002aecafc96d7d17051f#f7ec3506a8528bcb51d4002aecafc96d7d17051f"
 
 [[package]]
 name = "media-voice"
 version = "0.1.0"
-source = "git+https://github.com/oovm/boost.rs.git?rev=f7ec3506a8528bcb51d4002aecafc96d7d17051f#f7ec3506a8528bcb51d4002aecafc96d7d17051f"
 dependencies = [
  "atlas-cloud",
  "boost-collection",
