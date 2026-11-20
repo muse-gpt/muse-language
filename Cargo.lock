@@ -72,6 +72,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "atlas-cloud"
+version = "0.1.0"
+source = "git+https://github.com/oovm/boost.rs.git?rev=f7ec3506a8528bcb51d4002aecafc96d7d17051f#f7ec3506a8528bcb51d4002aecafc96d7d17051f"
+dependencies = [
+ "boost-crypto",
+ "boost-net",
+ "boost-random",
+ "serde_json",
+]
+
+[[package]]
 name = "autocfg"
 version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -106,6 +117,12 @@ name = "base64"
 version = "0.23.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ac07cdecf99051d9a5238b80f35af32cdeba5b336e55d957b318b50137e18da5"
+
+[[package]]
+name = "base64ct"
+version = "1.8.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2af50177e190e07a26ab74f8b1efbfe2ef87da2116221318cb1c2e82baf7de06"
 
 [[package]]
 name = "bit-set"
@@ -162,9 +179,103 @@ dependencies = [
 ]
 
 [[package]]
+name = "boost-collection"
+version = "0.1.0"
+source = "git+https://github.com/oovm/boost.rs.git?rev=f7ec3506a8528bcb51d4002aecafc96d7d17051f#f7ec3506a8528bcb51d4002aecafc96d7d17051f"
+dependencies = [
+ "boost-collection-macro",
+]
+
+[[package]]
+name = "boost-collection-macro"
+version = "0.1.0"
+source = "git+https://github.com/oovm/boost.rs.git?rev=f7ec3506a8528bcb51d4002aecafc96d7d17051f#f7ec3506a8528bcb51d4002aecafc96d7d17051f"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 3.0.10",
+]
+
+[[package]]
+name = "boost-console"
+version = "0.1.0"
+source = "git+https://github.com/oovm/boost.rs.git?rev=f7ec3506a8528bcb51d4002aecafc96d7d17051f#f7ec3506a8528bcb51d4002aecafc96d7d17051f"
+
+[[package]]
+name = "boost-crypto"
+version = "0.1.0"
+source = "git+https://github.com/oovm/boost.rs.git?rev=f7ec3506a8528bcb51d4002aecafc96d7d17051f#f7ec3506a8528bcb51d4002aecafc96d7d17051f"
+dependencies = [
+ "boost-random",
+ "data-encoding",
+ "rsa",
+ "sha1",
+ "sha2 0.10.9",
+ "zeroize",
+]
+
+[[package]]
+name = "boost-harness"
+version = "0.1.0"
+source = "git+https://github.com/oovm/boost.rs.git?rev=f7ec3506a8528bcb51d4002aecafc96d7d17051f#f7ec3506a8528bcb51d4002aecafc96d7d17051f"
+dependencies = [
+ "boost-console",
+ "boost-harness-macro",
+ "boost-math",
+ "boost-source 0.1.0 (git+https://github.com/oovm/boost.rs.git?rev=f7ec3506a8528bcb51d4002aecafc96d7d17051f)",
+ "serde",
+]
+
+[[package]]
+name = "boost-harness-macro"
+version = "0.1.0"
+source = "git+https://github.com/oovm/boost.rs.git?rev=f7ec3506a8528bcb51d4002aecafc96d7d17051f#f7ec3506a8528bcb51d4002aecafc96d7d17051f"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 3.0.10",
+]
+
+[[package]]
+name = "boost-math"
+version = "0.1.0"
+source = "git+https://github.com/oovm/boost.rs.git?rev=f7ec3506a8528bcb51d4002aecafc96d7d17051f#f7ec3506a8528bcb51d4002aecafc96d7d17051f"
+dependencies = [
+ "boost-collection",
+]
+
+[[package]]
+name = "boost-net"
+version = "0.1.0"
+source = "git+https://github.com/oovm/boost.rs.git?rev=f7ec3506a8528bcb51d4002aecafc96d7d17051f#f7ec3506a8528bcb51d4002aecafc96d7d17051f"
+dependencies = [
+ "boost-crypto",
+ "boost-random",
+ "data-binary-asn1",
+ "data-encoding",
+ "url",
+]
+
+[[package]]
+name = "boost-random"
+version = "0.1.0"
+source = "git+https://github.com/oovm/boost.rs.git?rev=f7ec3506a8528bcb51d4002aecafc96d7d17051f#f7ec3506a8528bcb51d4002aecafc96d7d17051f"
+dependencies = [
+ "boost-math",
+]
+
+[[package]]
 name = "boost-source"
 version = "0.1.0"
 source = "git+https://github.com/oovm/rust-boost?rev=71db8fa50f49e3693640cbd19e64ad9c797e5932#71db8fa50f49e3693640cbd19e64ad9c797e5932"
+dependencies = [
+ "serde",
+]
+
+[[package]]
+name = "boost-source"
+version = "0.1.0"
+source = "git+https://github.com/oovm/boost.rs.git?rev=f7ec3506a8528bcb51d4002aecafc96d7d17051f#f7ec3506a8528bcb51d4002aecafc96d7d17051f"
 dependencies = [
  "serde",
 ]
@@ -268,6 +379,12 @@ dependencies = [
 
 [[package]]
 name = "const-oid"
+version = "0.9.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c2459377285ad874054d797f3ccebf984978aa39129f6eafde5cdc8315b612f8"
+
+[[package]]
+name = "const-oid"
 version = "0.10.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "be95d4a884358a21a199689323c29e9256b4a1b315e22f183d155422041d3a9a"
@@ -306,15 +423,6 @@ dependencies = [
  "bitflags 1.3.2",
  "core-foundation",
  "libc",
-]
-
-[[package]]
-name = "core_maths"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "77745e017f5edba1a9c1d854f6f3a52dac8a12dd5af5d2f54aecf61e43d80d30"
-dependencies = [
- "libm",
 ]
 
 [[package]]
@@ -438,11 +546,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "data-binary-asn1"
+version = "0.1.0"
+source = "git+https://github.com/oovm/boost.rs.git?rev=f7ec3506a8528bcb51d4002aecafc96d7d17051f#f7ec3506a8528bcb51d4002aecafc96d7d17051f"
+
+[[package]]
+name = "data-binary-core"
+version = "0.1.0"
+source = "git+https://github.com/oovm/boost.rs.git?rev=f7ec3506a8528bcb51d4002aecafc96d7d17051f#f7ec3506a8528bcb51d4002aecafc96d7d17051f"
+dependencies = [
+ "boost-harness",
+]
+
+[[package]]
+name = "data-binary-ttf"
+version = "0.1.0"
+source = "git+https://github.com/oovm/boost.rs.git?rev=f7ec3506a8528bcb51d4002aecafc96d7d17051f#f7ec3506a8528bcb51d4002aecafc96d7d17051f"
+dependencies = [
+ "data-binary-core",
+]
+
+[[package]]
+name = "data-encoding"
+version = "0.1.0"
+source = "git+https://github.com/oovm/boost.rs.git?rev=f7ec3506a8528bcb51d4002aecafc96d7d17051f#f7ec3506a8528bcb51d4002aecafc96d7d17051f"
+
+[[package]]
 name = "data-text-core"
 version = "0.1.0"
 source = "git+https://github.com/oovm/rust-boost?rev=71db8fa50f49e3693640cbd19e64ad9c797e5932#71db8fa50f49e3693640cbd19e64ad9c797e5932"
 dependencies = [
- "boost-source",
+ "boost-source 0.1.0 (git+https://github.com/oovm/rust-boost?rev=71db8fa50f49e3693640cbd19e64ad9c797e5932)",
  "serde",
 ]
 
@@ -477,12 +611,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "der"
+version = "0.7.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e7c1832837b905bbfb5101e07cc24c8deddf52f93225eee6ead5f4d63d53ddcb"
+dependencies = [
+ "const-oid 0.9.6",
+ "pem-rfc7468",
+ "zeroize",
+]
+
+[[package]]
 name = "digest"
 version = "0.10.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9ed9a281f7bc9b7576e61468ba615a66a5c8cfdff42420a70aa82701a3b1e292"
 dependencies = [
  "block-buffer 0.10.4",
+ "const-oid 0.9.6",
  "crypto-common 0.1.7",
 ]
 
@@ -493,7 +639,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f1dd6dbb5841937940781866fa1281a1ff7bd3bf827091440879f9994983d5c2"
 dependencies = [
  "block-buffer 0.12.1",
- "const-oid",
+ "const-oid 0.10.3",
  "crypto-common 0.2.2",
 ]
 
@@ -590,16 +736,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d9c4f5dac5e15c24eb999c26181a6ca40b39fe946cbe4c263c7209467bc83af2"
 
 [[package]]
-name = "fontdue"
-version = "0.9.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e796cb6894e6418daacea84b28dd4f98d3b32c74d5bb452ba1ecfbf5ad8e84ca"
-dependencies = [
- "hashbrown 0.15.5",
- "ttf-parser",
-]
-
-[[package]]
 name = "foreign-types"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -625,6 +761,15 @@ name = "foreign-types-shared"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "aa9a19cbb55df58761df49b23516a86d432839add4af60fc256da840f66ed35b"
+
+[[package]]
+name = "form_urlencoded"
+version = "1.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cb4cb245038516f5f85277875cdaa4f7d2c9a0fa0468de06ed190163b1581fcf"
+dependencies = [
+ "percent-encoding",
+]
 
 [[package]]
 name = "futures"
@@ -727,7 +872,7 @@ dependencies = [
 [[package]]
 name = "geometry"
 version = "0.1.0"
-source = "git+https://github.com/oovm/boost.rs.git?rev=50e3d95d57d7c8fdaa95f4ea9356f4b083e02737#50e3d95d57d7c8fdaa95f4ea9356f4b083e02737"
+source = "git+https://github.com/oovm/boost.rs.git?rev=f7ec3506a8528bcb51d4002aecafc96d7d17051f#f7ec3506a8528bcb51d4002aecafc96d7d17051f"
 dependencies = [
  "geometry-motion",
  "geometry-types",
@@ -736,7 +881,7 @@ dependencies = [
 [[package]]
 name = "geometry-motion"
 version = "0.1.0"
-source = "git+https://github.com/oovm/boost.rs.git?rev=50e3d95d57d7c8fdaa95f4ea9356f4b083e02737#50e3d95d57d7c8fdaa95f4ea9356f4b083e02737"
+source = "git+https://github.com/oovm/boost.rs.git?rev=f7ec3506a8528bcb51d4002aecafc96d7d17051f#f7ec3506a8528bcb51d4002aecafc96d7d17051f"
 dependencies = [
  "geometry-types",
  "serde",
@@ -745,9 +890,20 @@ dependencies = [
 [[package]]
 name = "geometry-types"
 version = "0.1.0"
-source = "git+https://github.com/oovm/boost.rs.git?rev=50e3d95d57d7c8fdaa95f4ea9356f4b083e02737#50e3d95d57d7c8fdaa95f4ea9356f4b083e02737"
+source = "git+https://github.com/oovm/boost.rs.git?rev=f7ec3506a8528bcb51d4002aecafc96d7d17051f#f7ec3506a8528bcb51d4002aecafc96d7d17051f"
 dependencies = [
  "serde",
+]
+
+[[package]]
+name = "getrandom"
+version = "0.2.17"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ff2abc00be7fca6ebc474524697ae276ad847ad0a6b3faa4bcb027e9a4614ad0"
+dependencies = [
+ "cfg-if",
+ "libc",
+ "wasi",
 ]
 
 [[package]]
@@ -865,7 +1021,7 @@ dependencies = [
 [[package]]
 name = "hardware-program"
 version = "0.1.0"
-source = "git+https://github.com/oovm/boost.rs.git?rev=50e3d95d57d7c8fdaa95f4ea9356f4b083e02737#50e3d95d57d7c8fdaa95f4ea9356f4b083e02737"
+source = "git+https://github.com/oovm/boost.rs.git?rev=f7ec3506a8528bcb51d4002aecafc96d7d17051f#f7ec3506a8528bcb51d4002aecafc96d7d17051f"
 dependencies = [
  "serde",
  "serde_json",
@@ -989,6 +1145,47 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3632ebbd0c5c3637ba1a40bdf8288f2cb9d2268e73441a69d5fc73d7cfbaa87c"
 
 [[package]]
+name = "icu_normalizer"
+version = "2.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "404a3b8c486f205c87fe7f23ab6894d84a4ad76d6e4671ae1981ba7def87c599"
+dependencies = [
+ "icu_collections",
+ "icu_normalizer_data",
+ "icu_properties",
+ "icu_provider",
+ "smallvec",
+ "zerovec",
+]
+
+[[package]]
+name = "icu_normalizer_data"
+version = "2.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "20f0088bfb7441f7a37fa0c9e20cb1e9cba1cac6b9ce8cd2a6dc44294f8e8cbc"
+
+[[package]]
+name = "icu_properties"
+version = "2.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2ea83d991c56158f7cf898bf86436c1dfe7c07ee82fe88951f2695c9f37a379f"
+dependencies = [
+ "displaydoc",
+ "icu_collections",
+ "icu_locale_core",
+ "icu_properties_data",
+ "icu_provider",
+ "zerotrie",
+ "zerovec",
+]
+
+[[package]]
+name = "icu_properties_data"
+version = "2.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b98f29af82d02b163fe50161388350e743bb3107cc8e8c2f7314cb505faddfcf"
+
+[[package]]
 name = "icu_provider"
 version = "2.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1033,6 +1230,27 @@ name = "ident_case"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b9e0384b61958566e926dc50660321d12159025e767c18e043daf26b70104c39"
+
+[[package]]
+name = "idna"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3b0875f23caa03898994f6ddc501886a45c7d3d62d04d2d90788d47be1b1e4de"
+dependencies = [
+ "idna_adapter",
+ "smallvec",
+ "utf8_iter",
+]
+
+[[package]]
+name = "idna_adapter"
+version = "1.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cb68373c0d6620ef8105e855e7745e18b0d00d3bdb07fb532e434244cdb9a714"
+dependencies = [
+ "icu_normalizer",
+ "icu_properties",
+]
 
 [[package]]
 name = "image"
@@ -1155,6 +1373,9 @@ name = "lazy_static"
 version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "20870f649af7073d53e38067b2a84312175d56ea15217e1b15bc83506ec50afb"
+dependencies = [
+ "spin",
+]
 
 [[package]]
 name = "libc"
@@ -1271,7 +1492,7 @@ dependencies = [
 [[package]]
 name = "media-audio"
 version = "0.1.0"
-source = "git+https://github.com/oovm/boost.rs.git?rev=50e3d95d57d7c8fdaa95f4ea9356f4b083e02737#50e3d95d57d7c8fdaa95f4ea9356f4b083e02737"
+source = "git+https://github.com/oovm/boost.rs.git?rev=f7ec3506a8528bcb51d4002aecafc96d7d17051f#f7ec3506a8528bcb51d4002aecafc96d7d17051f"
 dependencies = [
  "media-codec",
  "media-dsp",
@@ -1284,7 +1505,7 @@ dependencies = [
 [[package]]
 name = "media-codec"
 version = "0.1.0"
-source = "git+https://github.com/oovm/boost.rs.git?rev=50e3d95d57d7c8fdaa95f4ea9356f4b083e02737#50e3d95d57d7c8fdaa95f4ea9356f4b083e02737"
+source = "git+https://github.com/oovm/boost.rs.git?rev=f7ec3506a8528bcb51d4002aecafc96d7d17051f#f7ec3506a8528bcb51d4002aecafc96d7d17051f"
 dependencies = [
  "media-image",
  "media-types",
@@ -1294,12 +1515,12 @@ dependencies = [
 [[package]]
 name = "media-dsp"
 version = "0.1.0"
-source = "git+https://github.com/oovm/boost.rs.git?rev=50e3d95d57d7c8fdaa95f4ea9356f4b083e02737#50e3d95d57d7c8fdaa95f4ea9356f4b083e02737"
+source = "git+https://github.com/oovm/boost.rs.git?rev=f7ec3506a8528bcb51d4002aecafc96d7d17051f#f7ec3506a8528bcb51d4002aecafc96d7d17051f"
 
 [[package]]
 name = "media-image"
 version = "0.1.0"
-source = "git+https://github.com/oovm/boost.rs.git?rev=50e3d95d57d7c8fdaa95f4ea9356f4b083e02737#50e3d95d57d7c8fdaa95f4ea9356f4b083e02737"
+source = "git+https://github.com/oovm/boost.rs.git?rev=f7ec3506a8528bcb51d4002aecafc96d7d17051f#f7ec3506a8528bcb51d4002aecafc96d7d17051f"
 dependencies = [
  "geometry-types",
  "serde",
@@ -1308,7 +1529,7 @@ dependencies = [
 [[package]]
 name = "media-particles"
 version = "0.1.0"
-source = "git+https://github.com/oovm/boost.rs.git?rev=50e3d95d57d7c8fdaa95f4ea9356f4b083e02737#50e3d95d57d7c8fdaa95f4ea9356f4b083e02737"
+source = "git+https://github.com/oovm/boost.rs.git?rev=f7ec3506a8528bcb51d4002aecafc96d7d17051f#f7ec3506a8528bcb51d4002aecafc96d7d17051f"
 dependencies = [
  "geometry-types",
  "media-image",
@@ -1318,7 +1539,7 @@ dependencies = [
 [[package]]
 name = "media-post"
 version = "0.1.0"
-source = "git+https://github.com/oovm/boost.rs.git?rev=50e3d95d57d7c8fdaa95f4ea9356f4b083e02737#50e3d95d57d7c8fdaa95f4ea9356f4b083e02737"
+source = "git+https://github.com/oovm/boost.rs.git?rev=f7ec3506a8528bcb51d4002aecafc96d7d17051f#f7ec3506a8528bcb51d4002aecafc96d7d17051f"
 dependencies = [
  "geometry-motion",
  "geometry-types",
@@ -1333,7 +1554,7 @@ dependencies = [
 [[package]]
 name = "media-raster"
 version = "0.1.0"
-source = "git+https://github.com/oovm/boost.rs.git?rev=50e3d95d57d7c8fdaa95f4ea9356f4b083e02737#50e3d95d57d7c8fdaa95f4ea9356f4b083e02737"
+source = "git+https://github.com/oovm/boost.rs.git?rev=f7ec3506a8528bcb51d4002aecafc96d7d17051f#f7ec3506a8528bcb51d4002aecafc96d7d17051f"
 dependencies = [
  "geometry",
  "media-image",
@@ -1343,7 +1564,7 @@ dependencies = [
 [[package]]
 name = "media-synthesis"
 version = "0.1.0"
-source = "git+https://github.com/oovm/boost.rs.git?rev=50e3d95d57d7c8fdaa95f4ea9356f4b083e02737#50e3d95d57d7c8fdaa95f4ea9356f4b083e02737"
+source = "git+https://github.com/oovm/boost.rs.git?rev=f7ec3506a8528bcb51d4002aecafc96d7d17051f#f7ec3506a8528bcb51d4002aecafc96d7d17051f"
 dependencies = [
  "media-dsp",
  "media-types",
@@ -1353,9 +1574,9 @@ dependencies = [
 [[package]]
 name = "media-text"
 version = "0.1.0"
-source = "git+https://github.com/oovm/boost.rs.git?rev=50e3d95d57d7c8fdaa95f4ea9356f4b083e02737#50e3d95d57d7c8fdaa95f4ea9356f4b083e02737"
+source = "git+https://github.com/oovm/boost.rs.git?rev=f7ec3506a8528bcb51d4002aecafc96d7d17051f#f7ec3506a8528bcb51d4002aecafc96d7d17051f"
 dependencies = [
- "fontdue",
+ "data-binary-ttf",
  "geometry",
  "media-image",
  "media-raster",
@@ -1365,13 +1586,15 @@ dependencies = [
 [[package]]
 name = "media-types"
 version = "0.1.0"
-source = "git+https://github.com/oovm/boost.rs.git?rev=50e3d95d57d7c8fdaa95f4ea9356f4b083e02737#50e3d95d57d7c8fdaa95f4ea9356f4b083e02737"
+source = "git+https://github.com/oovm/boost.rs.git?rev=f7ec3506a8528bcb51d4002aecafc96d7d17051f#f7ec3506a8528bcb51d4002aecafc96d7d17051f"
 
 [[package]]
 name = "media-voice"
 version = "0.1.0"
-source = "git+https://github.com/oovm/boost.rs.git?rev=50e3d95d57d7c8fdaa95f4ea9356f4b083e02737#50e3d95d57d7c8fdaa95f4ea9356f4b083e02737"
+source = "git+https://github.com/oovm/boost.rs.git?rev=f7ec3506a8528bcb51d4002aecafc96d7d17051f#f7ec3506a8528bcb51d4002aecafc96d7d17051f"
 dependencies = [
+ "atlas-cloud",
+ "boost-collection",
  "media-dsp",
  "media-types",
  "serde",
@@ -1710,11 +1933,46 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2bf50223579dc7cdcfb3bfcacf7069ff68243f8c363f62ffa99cf000a6b9c451"
 
 [[package]]
+name = "num-bigint-dig"
+version = "0.8.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e661dda6640fad38e827a6d4a310ff4763082116fe217f279885c97f511bb0b7"
+dependencies = [
+ "lazy_static",
+ "libm",
+ "num-integer",
+ "num-iter",
+ "num-traits",
+ "rand",
+ "smallvec",
+ "zeroize",
+]
+
+[[package]]
 name = "num-complex"
 version = "0.4.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "73f88a1307638156682bada9d7604135552957b7818057dcef22705b4d509495"
 dependencies = [
+ "num-traits",
+]
+
+[[package]]
+name = "num-integer"
+version = "0.1.47"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7ce2d95d4b3734dc35aa2f45e1aa22cd416814592a4f9d9205e11affd5b8e10b"
+dependencies = [
+ "num-traits",
+]
+
+[[package]]
+name = "num-iter"
+version = "0.1.46"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c92800bd69a1eac91786bcfe9da64a897eb72911b8dc3095decbd07429e8048b"
+dependencies = [
+ "num-integer",
  "num-traits",
 ]
 
@@ -1812,10 +2070,46 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2ee67f1008b1ba2321834326597b8e186293b049a023cdef258527550b9935b4"
 
 [[package]]
+name = "pem-rfc7468"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "88b39c9bfcfc231068454382784bb460aae594343fb030d46e9f50a645418412"
+dependencies = [
+ "base64ct",
+]
+
+[[package]]
+name = "percent-encoding"
+version = "2.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
+
+[[package]]
 name = "pin-project-lite"
 version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a89322df9ebe1c1578d689c92318e070967d1042b512afbe49518723f4e6d5cd"
+
+[[package]]
+name = "pkcs1"
+version = "0.7.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c8ffb9f10fa047879315e6625af03c164b16962a5368d724ed16323b68ace47f"
+dependencies = [
+ "der",
+ "pkcs8",
+ "spki",
+]
+
+[[package]]
+name = "pkcs8"
+version = "0.10.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f950b2377845cebe5cf8b5165cb3cc1a5e0fa5cfa3e1f7f55707d8fd82e0a7b7"
+dependencies = [
+ "der",
+ "spki",
+]
 
 [[package]]
 name = "pkg-config"
@@ -1857,6 +2151,15 @@ dependencies = [
  "serde_core",
  "writeable",
  "zerovec",
+]
+
+[[package]]
+name = "ppv-lite86"
+version = "0.2.21"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "85eae3c4ed2f50dcfe72643da4befc30deadb458a9b590d720cde2f2b1e97da9"
+dependencies = [
+ "zerocopy",
 ]
 
 [[package]]
@@ -1926,6 +2229,35 @@ name = "r-efi"
 version = "6.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf"
+
+[[package]]
+name = "rand"
+version = "0.8.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e058c7de0b26af77780c769414d6257830bb240f3c38477dbc2c16e5f54d6d4c"
+dependencies = [
+ "rand_chacha",
+ "rand_core",
+]
+
+[[package]]
+name = "rand_chacha"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e6c10a63a0fa32252be49d21e7709d4d4baf8d231c2dbce1eaa8141b9b127d88"
+dependencies = [
+ "ppv-lite86",
+ "rand_core",
+]
+
+[[package]]
+name = "rand_core"
+version = "0.6.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ec0be4795e2f6a28069bec0b5ff3e2ac9bafc99e6a9a7dc3547996c5c816922c"
+dependencies = [
+ "getrandom 0.2.17",
+]
 
 [[package]]
 name = "range-alloc"
@@ -2070,6 +2402,27 @@ dependencies = [
  "quote",
  "serde_json",
  "syn 3.0.10",
+]
+
+[[package]]
+name = "rsa"
+version = "0.9.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b8573f03f5883dcaebdfcf4725caa1ecb9c15b2ef50c43a07b816e06799bb12d"
+dependencies = [
+ "const-oid 0.9.6",
+ "digest 0.10.7",
+ "num-bigint-dig",
+ "num-integer",
+ "num-traits",
+ "pkcs1",
+ "pkcs8",
+ "rand_core",
+ "sha2 0.10.9",
+ "signature",
+ "spki",
+ "subtle",
+ "zeroize",
 ]
 
 [[package]]
@@ -2233,6 +2586,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "sha1"
+version = "0.10.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a978451301f4db1d02937a4ab3ccce137717b81826e79b7d49ffe3244a13c3b8"
+dependencies = [
+ "cfg-if",
+ "cpufeatures 0.2.17",
+ "digest 0.10.7",
+]
+
+[[package]]
 name = "sha2"
 version = "0.10.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2259,6 +2623,16 @@ name = "shlex"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
+
+[[package]]
+name = "signature"
+version = "2.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "77549399552de45a898a580c1b41d445bf730df867cc44e6c0233bbc4b8329de"
+dependencies = [
+ "digest 0.10.7",
+ "rand_core",
+]
 
 [[package]]
 name = "simd-adler32"
@@ -2298,12 +2672,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "spin"
+version = "0.9.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3763264f6b73151db08c50ff20d7d8a0b8796e021cdea7ceedad07b80155fa0e"
+
+[[package]]
 name = "spirv"
 version = "0.3.0+sdk-1.3.268.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "eda41003dc44290527a59b13432d4a0379379fa074b70174882adfbdfd917844"
 dependencies = [
  "bitflags 2.13.2",
+]
+
+[[package]]
+name = "spki"
+version = "0.7.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d91ed6c858b01f942cd56b37a94b3e0a1798290327d1236e4d9cf4eaca44d29d"
+dependencies = [
+ "base64ct",
+ "der",
 ]
 
 [[package]]
@@ -2358,6 +2748,12 @@ dependencies = [
  "rustversion",
  "syn 2.0.119",
 ]
+
+[[package]]
+name = "subtle"
+version = "2.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 
 [[package]]
 name = "supports-color"
@@ -2682,9 +3078,6 @@ name = "ttf-parser"
 version = "0.25.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d2df906b07856748fa3f6e0ad0cbaa047052d4a7dd609e231c4f72cee8c36f31"
-dependencies = [
- "core_maths",
-]
 
 [[package]]
 name = "typenum"
@@ -2723,6 +3116,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "673aac59facbab8a9007c7f6108d11f63b603f7cabff99fabf650fea5c32b861"
 
 [[package]]
+name = "url"
+version = "2.5.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ff67a8a4397373c3ef660812acab3268222035010ab8680ec4215f38ba3d0eed"
+dependencies = [
+ "form_urlencoded",
+ "idna",
+ "percent-encoding",
+ "serde",
+]
+
+[[package]]
 name = "utf8_iter"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2743,7 +3148,7 @@ version = "1.29.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bed99139f7dac9b5cfe5f17be4d66dc7079a34dee1d74bcc77217119240e267c"
 dependencies = [
- "getrandom",
+ "getrandom 0.4.3",
  "js-sys",
  "wasm-bindgen",
 ]
@@ -3302,6 +3707,26 @@ dependencies = [
  "quote",
  "syn 3.0.10",
  "synstructure",
+]
+
+[[package]]
+name = "zeroize"
+version = "1.9.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "85ccff8a4805aba1eaa4cd4afcd49f7557dd2cf5fd79ffc37f8959466effc5aa"
+dependencies = [
+ "zeroize_derive",
+]
+
+[[package]]
+name = "zeroize_derive"
+version = "1.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3c50655cbb0fe3fc43170059e702f1ce5e19b84cec58dc87b037a09935c2f328"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
 ]
 
 [[package]]
